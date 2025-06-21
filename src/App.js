@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { initializeApp } from "firebase/app";
+import { firebaseConfig } from "./firebaseConfig";
 import {
   getAuth,
   signInWithPopup,
@@ -11,7 +12,6 @@ import {
   getFirestore,
   collection,
   doc,
-  setDoc,
   addDoc,
   onSnapshot,
   query,
@@ -35,18 +35,15 @@ import {
 } from "recharts";
 import {
   PlusCircle,
-  TrendingUp,
   DollarSign,
   Home,
   Edit,
   Trash2,
-  LogIn,
   LogOut,
   Loader,
   BarChart2,
   AlertCircle,
 } from "lucide-react";
-import { firebaseConfig } from './firebaseConfig';
 
 // --- SHADCN-LIKE UI COMPONENTS (self-contained for portability) ---
 const Card = ({ children, className = "" }) => (
@@ -404,11 +401,14 @@ export default function App() {
         sourcePayload.otherDebt = sourceData.otherDebt;
         sourcePayload.lastUpdated = timestamp;
       }
+      // **FIX**: The source creation/update must also be part of the batch for atomic writes.
       batch.set(sourceRef, sourcePayload, { merge: true });
 
       // --- Save Accounts (for non-property types) ---
       if (sourceData.type !== "property" && sourceData.accounts) {
         sourceData.accounts.forEach((acc) => {
+          // Make sure new accounts get a proper sourceId, even before the sourceRef is committed
+          const finalSourceId = sourceRef.id;
           const accountRef = acc.id
             ? doc(db, `${baseDocPath}/accounts`, acc.id)
             : doc(collection(db, `${baseDocPath}/accounts`));
@@ -416,7 +416,7 @@ export default function App() {
             accountRef,
             {
               ...acc,
-              sourceId: sourceRef.id,
+              sourceId: finalSourceId,
               lastUpdated: timestamp,
             },
             { merge: true }
@@ -439,8 +439,7 @@ export default function App() {
 
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
-    // A simple confirm is fine for web, but for robust UI, a custom dialog is better.
-    // This avoids issues in environments where window.confirm is blocked.
+    // Using a custom modal for confirmation would be a better UX, but window.confirm is simple.
     if (
       !window.confirm(
         "Are you sure you want to delete this source and all its accounts? This cannot be undone."
