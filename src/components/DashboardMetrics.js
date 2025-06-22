@@ -24,6 +24,8 @@ export default function DashboardMetrics({ data, snapshots }) {
     "#FF8042",
     "#AF19FF",
     "#FF1943",
+    "#FF45A1",
+    "#45A1FF",
   ];
 
   const formattedSnapshots = useMemo(() => {

@@ -166,11 +166,37 @@ export default function Dashboard({ user, auth }) {
       0
     );
 
-    // Filter and sort the data for the pie chart
-    const assetAllocation = sourceValues
-      .filter((s) => s.totalValuePLN > 0)
-      .map((s) => ({ name: s.name, value: s.totalValuePLN }))
-      .sort((a, b) => b.value - a.value);
+    // Process data for the asset allocation pie chart, grouping small assets
+    const assetAllocation = (() => {
+      if (netWorth <= 0) return [];
+
+      const majorAssets = [];
+      let otherAssetsValue = 0;
+
+      const positiveSources = sourceValues.filter((s) => s.totalValuePLN > 0);
+
+      // Iterate over sources to separate major assets from minor ones
+      positiveSources.forEach((source) => {
+        // Check if the asset is less than 2% of the total net worth
+        if ((source.totalValuePLN / netWorth) * 100 < 2) {
+          otherAssetsValue += source.totalValuePLN;
+        } else {
+          majorAssets.push({
+            name: source.name,
+            value: source.totalValuePLN,
+          });
+        }
+      });
+
+      // The 'majorAssets' are already sorted because 'sourceValues' is sorted.
+      // If there are assets that were summed up, add an "Other" category.
+      // This is pushed at the end to maintain the desired order.
+      if (otherAssetsValue > 0) {
+        majorAssets.push({ name: "Other", value: otherAssetsValue });
+      }
+
+      return majorAssets;
+    })();
 
     return { sourceValues, netWorth, assetAllocation };
   }, [sources, accounts, exchangeRates]);
@@ -268,7 +294,6 @@ export default function Dashboard({ user, auth }) {
 
       await batch.commit();
       await takeSnapshot();
-      // --- THIS LINE CLOSES THE MODAL ON SUCCESS ---
       handleCloseModal();
     } catch (e) {
       console.error("Error saving source:", e);
@@ -283,6 +308,8 @@ export default function Dashboard({ user, auth }) {
   // Delete source data from Firestore
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
+    // It's generally better to use a custom modal for confirmation
+    // instead of window.confirm for better UX and to avoid issues in iframes.
     if (
       !window.confirm(
         "Are you sure you want to delete this source and all its accounts? This cannot be undone."
