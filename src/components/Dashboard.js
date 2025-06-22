@@ -30,11 +30,13 @@ export default function Dashboard({ user, auth }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState(null);
 
+  // Initialize Firestore instance
   useEffect(() => {
     const firestore = getFirestore(auth.app);
     setDb(firestore);
   }, [auth.app]);
 
+  // Set up data listeners
   useEffect(() => {
     if (!db || !user) {
       setSources([]);
@@ -92,6 +94,7 @@ export default function Dashboard({ user, auth }) {
     };
   }, [db, user]);
 
+  // Fetch exchange rates
   useEffect(() => {
     const fetchRates = async () => {
       try {
@@ -116,47 +119,59 @@ export default function Dashboard({ user, auth }) {
     fetchRates();
   }, []);
 
+  const sortedAccounts = useMemo(() => {
+    return [...accounts].sort((a, b) => b.balance - a.balance);
+  }, [accounts]);
+
+  // Process data for display
   const processedData = useMemo(() => {
     const plnRates = { ...exchangeRates, PLN: 1 };
-    const sourceValues = sources.map((source) => {
-      let totalValuePLN = 0;
-      let lastUpdated = source.lastUpdated || null;
 
-      if (source.type === "property") {
-        const propertyValue = (source.m2 || 0) * (source.pricePerM2 || 0);
-        const totalDebt = (source.bankDebt || 0) + (source.otherDebt || 0);
-        totalValuePLN = propertyValue - totalDebt;
-      } else {
-        const sourceAccounts = accounts.filter(
-          (acc) => acc.sourceId === source.id
-        );
-        if (sourceAccounts.length > 0) {
-          totalValuePLN = sourceAccounts.reduce((sum, acc) => {
-            const rate = plnRates[acc.currency] || 1;
-            return sum + acc.balance * rate;
-          }, 0);
-          // Find the most recent update time among associated accounts
-          lastUpdated = sourceAccounts.reduce(
-            (latest, acc) =>
-              !latest ||
-              (acc.lastUpdated &&
-                acc.lastUpdated.toMillis() > latest.toMillis())
-                ? acc.lastUpdated
-                : latest,
-            lastUpdated
+    // Calculate values and then sort the sources list
+    const sourceValues = sources
+      .map((source) => {
+        let totalValuePLN = 0;
+        let lastUpdated = source.lastUpdated || null;
+
+        if (source.type === "property") {
+          const propertyValue = (source.m2 || 0) * (source.pricePerM2 || 0);
+          const totalDebt = (source.bankDebt || 0) + (source.otherDebt || 0);
+          totalValuePLN = propertyValue - totalDebt;
+        } else {
+          const sourceAccounts = accounts.filter(
+            (acc) => acc.sourceId === source.id
           );
+          if (sourceAccounts.length > 0) {
+            totalValuePLN = sourceAccounts.reduce((sum, acc) => {
+              const rate = plnRates[acc.currency] || 1;
+              return sum + acc.balance * rate;
+            }, 0);
+            lastUpdated = sourceAccounts.reduce(
+              (latest, acc) =>
+                !latest ||
+                (acc.lastUpdated &&
+                  acc.lastUpdated.toMillis() > latest.toMillis())
+                  ? acc.lastUpdated
+                  : latest,
+              lastUpdated
+            );
+          }
         }
-      }
-      return { ...source, totalValuePLN, lastUpdated };
-    });
+        return { ...source, totalValuePLN, lastUpdated };
+      })
+      .sort((a, b) => b.totalValuePLN - a.totalValuePLN);
 
     const netWorth = sourceValues.reduce(
       (sum, source) => sum + source.totalValuePLN,
       0
     );
+
+    // Filter and sort the data for the pie chart
     const assetAllocation = sourceValues
       .filter((s) => s.totalValuePLN > 0)
-      .map((s) => ({ name: s.name, value: s.totalValuePLN }));
+      .map((s) => ({ name: s.name, value: s.totalValuePLN }))
+      .sort((a, b) => b.value - a.value);
+
     return { sourceValues, netWorth, assetAllocation };
   }, [sources, accounts, exchangeRates]);
 
@@ -212,7 +227,7 @@ export default function Dashboard({ user, auth }) {
     const userId = user.uid;
     const baseDocPath = `artifacts/${appId}/users/${userId}`;
     const batch = writeBatch(db);
-    const timestamp = Timestamp.now(); // FIX: Generate timestamp on the client
+    const timestamp = Timestamp.now();
 
     try {
       const sourceRef = sourceData.id
@@ -222,7 +237,7 @@ export default function Dashboard({ user, auth }) {
       const sourcePayload = {
         name: sourceData.name,
         type: sourceData.type,
-        lastUpdated: timestamp, // Always set the timestamp
+        lastUpdated: timestamp,
       };
 
       if (sourceData.type === "property") {
@@ -253,10 +268,10 @@ export default function Dashboard({ user, auth }) {
 
       await batch.commit();
       await takeSnapshot();
+      // --- THIS LINE CLOSES THE MODAL ON SUCCESS ---
       handleCloseModal();
     } catch (e) {
       console.error("Error saving source:", e);
-      // FIX: Provide a specific error message for permission issues
       const errorMessage =
         e.code === "permission-denied"
           ? "Permission denied. Please check your Firestore security rules."
@@ -331,7 +346,7 @@ export default function Dashboard({ user, auth }) {
           sources={processedData.sourceValues}
           onEdit={handleOpenModal}
           onDelete={handleDeleteSource}
-          accounts={accounts}
+          accounts={sortedAccounts}
         />
       </main>
       <SourceModal

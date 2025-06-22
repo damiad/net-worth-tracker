@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 import {
   PieChart,
   Pie,
@@ -12,7 +13,6 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 import { BarChart2 } from "lucide-react";
 
 export default function DashboardMetrics({ data, snapshots }) {
@@ -27,6 +27,7 @@ export default function DashboardMetrics({ data, snapshots }) {
   ];
 
   const formattedSnapshots = useMemo(() => {
+    if (!snapshots) return [];
     return snapshots.map((s) => ({
       date: s.timestamp
         .toDate()
@@ -58,7 +59,7 @@ export default function DashboardMetrics({ data, snapshots }) {
           <CardTitle>Net Worth Over Time</CardTitle>
         </CardHeader>
         <CardContent className="h-64">
-          {formattedSnapshots.length > 1 ? (
+          {formattedSnapshots.length >= 1 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={formattedSnapshots}
@@ -99,18 +100,19 @@ export default function DashboardMetrics({ data, snapshots }) {
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <BarChart2 size={32} />
               <p className="mt-2 text-center text-sm">
-                Not enough data for a chart. Update sources to see history.
+                No data for chart. Update your sources to create a snapshot.
               </p>
             </div>
           )}
         </CardContent>
       </Card>
+
       <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle>Asset Allocation</CardTitle>
         </CardHeader>
         <CardContent className="h-72">
-          {assetAllocation.length > 0 ? (
+          {assetAllocation && assetAllocation.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
