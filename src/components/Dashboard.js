@@ -9,14 +9,15 @@ import {
   getDocs,
   writeBatch,
   Timestamp,
+  where,
 } from "firebase/firestore";
 
-import Header from "./Header";
 import DashboardMetrics from "./DashboardMetrics";
 import SourcesList from "./SourcesList";
 import SourceModal from "./SourceModal";
 import { Button } from "./ui/Button";
 import { PlusCircle } from "lucide-react";
+import Header from "./Header";
 
 const appId = "net-worth-tracker";
 
@@ -29,11 +30,14 @@ export default function Dashboard({ user, auth }) {
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState(null);
+  const [isSnapshotPending, setIsSnapshotPending] = useState(false);
 
   // Initialize Firestore instance
   useEffect(() => {
-    const firestore = getFirestore(auth.app);
-    setDb(firestore);
+    if (auth.app) {
+      const firestore = getFirestore(auth.app);
+      setDb(firestore);
+    }
   }, [auth.app]);
 
   // Set up data listeners
@@ -127,7 +131,6 @@ export default function Dashboard({ user, auth }) {
   const processedData = useMemo(() => {
     const plnRates = { ...exchangeRates, PLN: 1 };
 
-    // Calculate values and then sort the sources list
     const sourceValues = sources
       .map((source) => {
         let totalValuePLN = 0;
@@ -166,19 +169,18 @@ export default function Dashboard({ user, auth }) {
       0
     );
 
-    // Process data for the asset allocation pie chart, grouping small assets
+    const liquidAssets = sourceValues
+      .filter((source) => source.type !== "property")
+      .reduce((sum, source) => sum + source.totalValuePLN, 0);
+
     const assetAllocation = (() => {
       if (netWorth <= 0) return [];
-
+      const positiveSources = sourceValues.filter((s) => s.totalValuePLN > 0);
+      const threshold = netWorth * 0.02;
       const majorAssets = [];
       let otherAssetsValue = 0;
-
-      const positiveSources = sourceValues.filter((s) => s.totalValuePLN > 0);
-
-      // Iterate over sources to separate major assets from minor ones
       positiveSources.forEach((source) => {
-        // Check if the asset is less than 2% of the total net worth
-        if ((source.totalValuePLN / netWorth) * 100 < 2) {
+        if (source.totalValuePLN < threshold) {
           otherAssetsValue += source.totalValuePLN;
         } else {
           majorAssets.push({
@@ -187,18 +189,13 @@ export default function Dashboard({ user, auth }) {
           });
         }
       });
-
-      // The 'majorAssets' are already sorted because 'sourceValues' is sorted.
-      // If there are assets that were summed up, add an "Other" category.
-      // This is pushed at the end to maintain the desired order.
       if (otherAssetsValue > 0) {
         majorAssets.push({ name: "Other", value: otherAssetsValue });
       }
-
       return majorAssets;
     })();
 
-    return { sourceValues, netWorth, assetAllocation };
+    return { sourceValues, netWorth, liquidAssets, assetAllocation };
   }, [sources, accounts, exchangeRates]);
 
   // Take a daily snapshot of net worth
@@ -212,30 +209,43 @@ export default function Dashboard({ user, auth }) {
     );
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const startOfDay = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
 
-    const q = query(snapshotCollectionRef);
-    const existingSnapshots = await getDocs(q);
-    const todaySnapshotExists = existingSnapshots.docs.some((doc) => {
-      const data = doc.data();
-      if (data.timestamp && data.timestamp.toDate) {
-        const snapshotDate = data.timestamp.toDate();
-        snapshotDate.setHours(0, 0, 0, 0);
-        return snapshotDate.getTime() === today.getTime();
-      }
-      return false;
+    const q = query(
+      snapshotCollectionRef,
+      where("timestamp", ">=", startOfDay)
+    );
+    const snapshotsToDelete = await getDocs(q);
+
+    const batch = writeBatch(db);
+
+    snapshotsToDelete.forEach((doc) => {
+      batch.delete(doc.ref);
     });
 
-    if (!todaySnapshotExists) {
-      await addDoc(snapshotCollectionRef, {
-        netWorth: processedData.netWorth,
-        timestamp: Timestamp.fromDate(today),
-        assetAllocation: processedData.assetAllocation,
-      });
-    }
+    const newSnapshotRef = doc(snapshotCollectionRef);
+    batch.set(newSnapshotRef, {
+      netWorth: processedData.netWorth,
+      liquidAssets: processedData.liquidAssets,
+      timestamp: Timestamp.now(),
+      assetAllocation: processedData.assetAllocation,
+    });
+
+    await batch.commit();
   }, [db, user, processedData]);
 
-  // Modal handlers
+  // This effect will run after a save/delete to ensure the snapshot is taken with the latest data.
+  useEffect(() => {
+    if (isSnapshotPending && processedData.netWorth !== null) {
+      takeSnapshot();
+      setIsSnapshotPending(false); // Reset the flag
+    }
+  }, [isSnapshotPending, processedData, takeSnapshot]);
+
   const handleOpenModal = (source = null) => {
     setError(null);
     setEditingSource(source);
@@ -247,7 +257,6 @@ export default function Dashboard({ user, auth }) {
     setIsModalOpen(false);
   };
 
-  // Save source data to Firestore
   const handleSaveSource = async (sourceData) => {
     if (!db || !user) return;
     const userId = user.uid;
@@ -275,6 +284,24 @@ export default function Dashboard({ user, auth }) {
       batch.set(sourceRef, sourcePayload, { merge: true });
 
       if (sourceData.type !== "property" && sourceData.accounts) {
+        const existingAccounts = accounts.filter(
+          (acc) => acc.sourceId === sourceRef.id
+        );
+        const submittedAccountIds = sourceData.accounts
+          .map((a) => a.id)
+          .filter(Boolean);
+
+        existingAccounts.forEach((existingAcc) => {
+          if (!submittedAccountIds.includes(existingAcc.id)) {
+            const accToDeleteRef = doc(
+              db,
+              `${baseDocPath}/accounts`,
+              existingAcc.id
+            );
+            batch.delete(accToDeleteRef);
+          }
+        });
+
         sourceData.accounts.forEach((acc) => {
           const finalSourceId = sourceRef.id;
           const accountRef = acc.id
@@ -282,19 +309,15 @@ export default function Dashboard({ user, auth }) {
             : doc(collection(db, `${baseDocPath}/accounts`));
           batch.set(
             accountRef,
-            {
-              ...acc,
-              sourceId: finalSourceId,
-              lastUpdated: timestamp,
-            },
+            { ...acc, sourceId: finalSourceId, lastUpdated: timestamp },
             { merge: true }
           );
         });
       }
 
       await batch.commit();
-      await takeSnapshot();
       handleCloseModal();
+      setIsSnapshotPending(true); // Request a snapshot after state updates
     } catch (e) {
       console.error("Error saving source:", e);
       const errorMessage =
@@ -305,11 +328,8 @@ export default function Dashboard({ user, auth }) {
     }
   };
 
-  // Delete source data from Firestore
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
-    // It's generally better to use a custom modal for confirmation
-    // instead of window.confirm for better UX and to avoid issues in iframes.
     if (
       !window.confirm(
         "Are you sure you want to delete this source and all its accounts? This cannot be undone."
@@ -334,7 +354,7 @@ export default function Dashboard({ user, auth }) {
       });
 
       await batch.commit();
-      await takeSnapshot();
+      setIsSnapshotPending(true); // Request a snapshot after state updates
     } catch (e) {
       console.error("Error deleting source:", e);
       const errorMessage =
@@ -345,7 +365,6 @@ export default function Dashboard({ user, auth }) {
     }
   };
 
-  // Main component render
   return (
     <div className="bg-gray-50 dark:bg-gray-900 min-h-screen font-sans">
       <Header user={user} auth={auth} />

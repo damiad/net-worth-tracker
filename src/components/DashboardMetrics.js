@@ -16,7 +16,7 @@ import {
 import { BarChart2 } from "lucide-react";
 
 export default function DashboardMetrics({ data, snapshots }) {
-  const { netWorth, assetAllocation } = data;
+  const { netWorth, assetAllocation, liquidAssets } = data;
   const COLORS = [
     "#0088FE",
     "#00C49F",
@@ -34,7 +34,8 @@ export default function DashboardMetrics({ data, snapshots }) {
       date: s.timestamp
         .toDate()
         .toLocaleDateString("pl-PL", { month: "short", day: "numeric" }),
-      netWorth: s.netWorth,
+      "Net Worth": s.netWorth,
+      "Liquid Assets": s.liquidAssets,
     }));
   }, [snapshots]);
 
@@ -54,11 +55,19 @@ export default function DashboardMetrics({ data, snapshots }) {
           <p className="text-4xl font-bold text-gray-900 dark:text-white">
             {formatCurrency(netWorth)}
           </p>
+          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Liquid Assets
+            </p>
+            <p className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+              {formatCurrency(liquidAssets)}
+            </p>
+          </div>
         </CardContent>
       </Card>
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle>Net Worth Over Time</CardTitle>
+          <CardTitle>Worth Over Time</CardTitle>
         </CardHeader>
         <CardContent className="h-64">
           {formattedSnapshots.length >= 1 ? (
@@ -81,19 +90,31 @@ export default function DashboardMetrics({ data, snapshots }) {
                   tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
-                  formatter={(value) => [formatCurrency(value), "Net Worth"]}
+                  formatter={(value) => [formatCurrency(value)]}
                   contentStyle={{
                     backgroundColor: "rgba(31, 41, 55, 0.8)",
                     border: "none",
                     borderRadius: "0.5rem",
                   }}
                 />
+                <Legend verticalAlign="top" height={36} />
                 <Line
                   type="monotone"
-                  dataKey="netWorth"
+                  name="Net Worth"
+                  dataKey="Net Worth"
                   stroke="#3b82f6"
                   strokeWidth={2}
                   dot={{ r: 4, fill: "#3b82f6" }}
+                  activeDot={{ r: 8 }}
+                />
+                <Line
+                  type="monotone"
+                  name="Liquid Assets"
+                  dataKey="Liquid Assets"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                  strokeDasharray="5 5"
+                  dot={{ r: 4, fill: "#22c55e" }}
                   activeDot={{ r: 8 }}
                 />
               </LineChart>
