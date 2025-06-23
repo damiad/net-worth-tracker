@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Dialog } from "./ui/Dialog";
-import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
-import { Trash2 } from "lucide-react";
+import { Button } from "./ui/Button";
+import { Trash2, TrendingUp, PlusCircle } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 
 export default function SourceModal({
@@ -14,19 +14,23 @@ export default function SourceModal({
   accounts,
 }) {
   const isEditing = !!source;
+
   const [name, setName] = useState("");
   const [type, setType] = useState("bank");
 
-  // State for financial accounts
-  const [sourceAccounts, setSourceAccounts] = useState([]);
-  const [sourceLoans, setSourceLoans] = useState([]);
-  const [sourceDebts, setSourceDebts] = useState([]);
-
-  // State for property details
+  // Property State
   const [m2, setM2] = useState(0);
   const [pricePerM2, setPricePerM2] = useState(0);
   const [bankDebt, setBankDebt] = useState(0);
   const [otherDebts, setOtherDebts] = useState([]);
+  // --- CHANGE: Added granular currency state for properties ---
+  const [pricePerM2Currency, setPricePerM2Currency] = useState("PLN");
+  const [bankDebtCurrency, setBankDebtCurrency] = useState("PLN");
+
+  // Financial Account State
+  const [positiveAccounts, setPositiveAccounts] = useState([]);
+  const [loans, setLoans] = useState([]);
+  const [debts, setDebts] = useState([]);
 
   useEffect(() => {
     if (isEditing && source) {
@@ -37,76 +41,78 @@ export default function SourceModal({
         setPricePerM2(source.pricePerM2 || 0);
         setBankDebt(source.bankDebt || 0);
         setOtherDebts(source.otherDebts || []);
+        // --- CHANGE: Set granular property currencies when editing ---
+        setPricePerM2Currency(source.pricePerM2Currency || "PLN");
+        setBankDebtCurrency(source.bankDebtCurrency || "PLN");
       } else {
-        const relatedAccounts = accounts.filter(
+        const associatedAccounts = accounts.filter(
           (acc) => acc.sourceId === source.id
         );
-        setSourceAccounts(
-          relatedAccounts.filter((acc) => acc.type === "account")
+        setPositiveAccounts(
+          associatedAccounts.filter((acc) => acc.type === "account")
         );
-        setSourceLoans(relatedAccounts.filter((acc) => acc.type === "loan"));
-        setSourceDebts(relatedAccounts.filter((acc) => acc.type === "debt"));
+        setLoans(associatedAccounts.filter((acc) => acc.type === "loan"));
+        setDebts(associatedAccounts.filter((acc) => acc.type === "debt"));
       }
     } else {
-      // Reset form for a new source
       setName("");
       setType("bank");
-      setSourceAccounts([{ balance: 0, currency: "PLN", type: "account" }]);
-      setSourceLoans([]);
-      setSourceDebts([]);
       setM2(0);
       setPricePerM2(0);
       setBankDebt(0);
       setOtherDebts([]);
+      setPositiveAccounts([]);
+      setLoans([]);
+      setDebts([]);
+      setPricePerM2Currency("PLN");
+      setBankDebtCurrency("PLN");
     }
-  }, [source, isOpen, accounts, isEditing]);
+  }, [source, isOpen, isEditing, accounts]);
 
-  const handleItemChange = (list, setList, index, field, value) => {
+  const handleListChange = (list, setList, index, field, value) => {
     const updatedList = [...list];
-    const numberFields = [
-      "balance",
-      "baseAmount",
-      "accumulatedInterest",
-      "interestRate",
-      "m2",
-      "pricePerM2",
-      "bankDebt",
-    ];
-    updatedList[index][field] = numberFields.includes(field)
-      ? parseFloat(value) || 0
-      : value;
+    const item = { ...updatedList[index] };
+
+    if (
+      ["baseAmount", "accumulatedInterest", "interestRate", "balance"].includes(
+        field
+      )
+    ) {
+      item[field] = parseFloat(value) || 0;
+    } else {
+      item[field] = value;
+    }
+
+    item.lastUpdated = Timestamp.now();
+    updatedList[index] = item;
     setList(updatedList);
   };
 
-  const addItem = (list, setList, newItem) => {
-    setList([...list, newItem]);
+  const addListItem = (setList, newItem) => {
+    setList((prev) => [...(prev || []), newItem]);
   };
 
-  const removeItem = (list, setList, index) => {
-    const updatedList = list.filter((_, i) => i !== index);
-    setList(updatedList);
+  const removeListItem = (list, setList, index) => {
+    setList(list.filter((_, i) => i !== index));
   };
 
   const handleUpdateInterest = (list, setList, index) => {
     const updatedList = [...list];
-    const item = updatedList[index];
-    const lastUpdatedDate =
-      item.lastUpdated && item.lastUpdated.toDate
-        ? item.lastUpdated.toDate()
-        : new Date();
+    const item = { ...updatedList[index] };
+    const lastUpdateDate = item.lastUpdated?.toDate
+      ? item.lastUpdated.toDate()
+      : new Date();
     const now = new Date();
 
-    const timeDiff = now.getTime() - lastUpdatedDate.getTime();
-    const daysDiff = timeDiff / (1000 * 3600 * 24);
+    const daysDiff =
+      (now.getTime() - lastUpdateDate.getTime()) / (1000 * 3600 * 24);
+    const yearlyRate = (item.interestRate || 0) / 100;
+    const interest = (item.baseAmount || 0) * yearlyRate * (daysDiff / 365);
 
-    if (daysDiff > 0 && item.interestRate > 0) {
-      const dailyRate = item.interestRate / 100 / 365;
-      const interestToAdd = item.baseAmount * dailyRate * daysDiff;
-      item.accumulatedInterest =
-        (item.accumulatedInterest || 0) + interestToAdd;
-      item.lastUpdated = Timestamp.now();
-    }
+    item.accumulatedInterest = (item.accumulatedInterest || 0) + interest;
+    item.lastUpdated = Timestamp.now();
 
+    updatedList[index] = item;
     setList(updatedList);
   };
 
@@ -118,99 +124,96 @@ export default function SourceModal({
     };
 
     if (type === "property") {
-      payload.m2 = m2;
-      payload.pricePerM2 = pricePerM2;
-      payload.bankDebt = bankDebt;
-      payload.otherDebts = otherDebts;
+      payload = {
+        ...payload,
+        m2,
+        pricePerM2,
+        bankDebt,
+        otherDebts,
+        // --- CHANGE: Pass granular property currencies on save ---
+        pricePerM2Currency,
+        bankDebtCurrency,
+      };
     } else {
-      payload.accounts = sourceAccounts;
-      payload.loans = sourceLoans;
-      payload.debts = sourceDebts;
+      payload = {
+        ...payload,
+        accounts: positiveAccounts,
+        loans,
+        debts,
+      };
     }
-
     onSave(payload);
   };
 
   const title = isEditing ? `Edit ${source.name}` : "Add New Source";
 
-  const renderLoanOrDebtSection = (title, list, setList, type) => (
-    <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-4">
+  const renderDynamicList = (
+    title,
+    list,
+    setList,
+    fields,
+    isInterestBearing = false
+  ) => (
+    <div className="p-4 bg-gray-100 dark:bg-gray-700/50 rounded-lg space-y-4">
       <h4 className="font-semibold text-gray-800 dark:text-gray-100">
         {title}
       </h4>
-      {list.map((item, index) => (
+      {(list || []).map((item, index) => (
         <div
           key={item.id || index}
-          className="grid grid-cols-12 gap-2 items-end border-b dark:border-gray-600 pb-2"
+          className="grid grid-cols-12 gap-x-2 gap-y-1 items-end border-b dark:border-gray-600 pb-2"
         >
-          <div className="col-span-3">
-            <label className="text-xs">Name</label>
-            <Input
-              value={item.name}
-              onChange={(e) =>
-                handleItemChange(list, setList, index, "name", e.target.value)
-              }
-            />
-          </div>
-          <div className="col-span-3">
-            <label className="text-xs">Base Amount</label>
-            <Input
-              type="number"
-              value={item.baseAmount}
-              onChange={(e) =>
-                handleItemChange(
-                  list,
-                  setList,
-                  index,
-                  "baseAmount",
-                  e.target.value
-                )
-              }
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs">Int. Rate %</label>
-            <Input
-              type="number"
-              value={item.interestRate}
-              onChange={(e) =>
-                handleItemChange(
-                  list,
-                  setList,
-                  index,
-                  "interestRate",
-                  e.target.value
-                )
-              }
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="text-xs">Accum. Int.</label>
-            <Input
-              type="number"
-              value={item.accumulatedInterest}
-              onChange={(e) =>
-                handleItemChange(
-                  list,
-                  setList,
-                  index,
-                  "accumulatedInterest",
-                  e.target.value
-                )
-              }
-            />
-          </div>
-          <div className="col-span-2 flex items-center gap-1">
+          {fields.map((field) => (
+            <div key={field.name} className={field.className}>
+              <label className="text-xs">{field.label}</label>
+              {field.type === "select" ? (
+                <Select
+                  value={item[field.name]}
+                  onChange={(e) =>
+                    handleListChange(
+                      list,
+                      setList,
+                      index,
+                      field.name,
+                      e.target.value
+                    )
+                  }
+                >
+                  {field.options.map((opt) => (
+                    <option key={opt}>{opt}</option>
+                  ))}
+                </Select>
+              ) : (
+                <Input
+                  type={field.type}
+                  value={item[field.name]}
+                  onChange={(e) =>
+                    handleListChange(
+                      list,
+                      setList,
+                      index,
+                      field.name,
+                      e.target.value
+                    )
+                  }
+                  placeholder={field.placeholder}
+                />
+              )}
+            </div>
+          ))}
+          <div className="col-span-12 sm:col-span-1 flex justify-end gap-1">
+            {isInterestBearing && (
+              <Button
+                onClick={() => handleUpdateInterest(list, setList, index)}
+                variant="ghost"
+                size="sm"
+                className="w-8 h-8 p-0"
+              >
+                <TrendingUp size={14} />
+              </Button>
+            )}
             <Button
-              onClick={() => handleUpdateInterest(list, setList, index)}
-              variant="outline"
-              size="sm"
-              className="w-8 h-8 p-0"
-            >
-              🔄
-            </Button>
-            <Button
-              onClick={() => removeItem(list, setList, index)}
+              onClick={() => removeListItem(list, setList, index)}
               variant="destructive"
               size="sm"
               className="w-8 h-8 p-0"
@@ -222,26 +225,26 @@ export default function SourceModal({
       ))}
       <Button
         onClick={() =>
-          addItem(list, setList, {
-            name: "",
-            baseAmount: 0,
-            accumulatedInterest: 0,
-            interestRate: 0,
-            lastUpdated: Timestamp.now(),
-            type: type,
-          })
+          addListItem(
+            setList,
+            fields.reduce(
+              (acc, f) => ({ ...acc, [f.name]: f.defaultValue }),
+              {}
+            )
+          )
         }
         variant="outline"
         size="sm"
+        className="gap-1"
       >
-        Add {type === "loan" ? "Loan" : "Debt"}
+        <PlusCircle size={14} /> Add
       </Button>
     </div>
   );
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={title}>
-      <div className="p-1 pr-4 max-h-[70vh] overflow-y-auto">
+      <div className="max-h-[75vh] overflow-y-auto pr-2">
         <div className="space-y-4">
           <div>
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -268,118 +271,241 @@ export default function SourceModal({
           </div>
 
           {type === "property" ? (
-            renderLoanOrDebtSection(
-              "Other Debts",
-              otherDebts,
-              setOtherDebts,
-              "debt"
-            )
-          ) : (
-            <>
-              <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg space-y-4">
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-100 dark:bg-gray-700/50 rounded-lg space-y-4">
                 <h4 className="font-semibold text-gray-800 dark:text-gray-100">
-                  Positive Assets (Accounts)
+                  Property Details
                 </h4>
-                {sourceAccounts.map((acc, index) => (
-                  <div
-                    key={acc.id || index}
-                    className="grid grid-cols-12 gap-2 items-end border-b dark:border-gray-600 pb-2"
-                  >
-                    <div className="col-span-4">
-                      <label className="text-xs">Account Name</label>
-                      <Input
-                        value={acc.name || ""}
-                        onChange={(e) =>
-                          handleItemChange(
-                            sourceAccounts,
-                            setSourceAccounts,
-                            index,
-                            "name",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <label className="text-xs">Balance</label>
-                      <Input
-                        type="number"
-                        value={acc.balance}
-                        onChange={(e) =>
-                          handleItemChange(
-                            sourceAccounts,
-                            setSourceAccounts,
-                            index,
-                            "balance",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-span-4">
-                      <label className="text-xs">Currency</label>
-                      <Select
-                        value={acc.currency}
-                        onChange={(e) =>
-                          handleItemChange(
-                            sourceAccounts,
-                            setSourceAccounts,
-                            index,
-                            "currency",
-                            e.target.value
-                          )
-                        }
-                      >
-                        <option>PLN</option>
-                        <option>USD</option>
-                        <option>EUR</option>
-                      </Select>
-                    </div>
-                    <div className="col-span-1">
-                      <Button
-                        onClick={() =>
-                          removeItem(sourceAccounts, setSourceAccounts, index)
-                        }
-                        variant="destructive"
-                        size="sm"
-                        className="w-8 h-8 p-0"
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs">Area (m²)</label>
+                    <Input
+                      type="number"
+                      value={m2}
+                      onChange={(e) => setM2(parseFloat(e.target.value) || 0)}
+                    />
                   </div>
-                ))}
-                <Button
-                  onClick={() =>
-                    addItem(sourceAccounts, setSourceAccounts, {
-                      balance: 0,
-                      currency: "PLN",
-                      type: "account",
-                    })
-                  }
-                  variant="outline"
-                  size="sm"
-                >
-                  Add Account
-                </Button>
+                  <div>
+                    <label className="text-xs">Price per m²</label>
+                    <Input
+                      type="number"
+                      value={pricePerM2}
+                      onChange={(e) =>
+                        setPricePerM2(parseFloat(e.target.value) || 0)
+                      }
+                    />
+                  </div>
+                  {/* --- CHANGE: Added currency selector for price --- */}
+                  <div>
+                    <label className="text-xs">Price Currency</label>
+                    <Select
+                      value={pricePerM2Currency}
+                      onChange={(e) => setPricePerM2Currency(e.target.value)}
+                    >
+                      <option>PLN</option>
+                      <option>USD</option>
+                      <option>EUR</option>
+                      <option>GBP</option>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs">Bank Debt</label>
+                    <Input
+                      type="number"
+                      value={bankDebt}
+                      onChange={(e) =>
+                        setBankDebt(parseFloat(e.target.value) || 0)
+                      }
+                    />
+                  </div>
+                  {/* --- CHANGE: Added currency selector for bank debt --- */}
+                  <div>
+                    <label className="text-xs">Bank Debt Currency</label>
+                    <Select
+                      value={bankDebtCurrency}
+                      onChange={(e) => setBankDebtCurrency(e.target.value)}
+                    >
+                      <option>PLN</option>
+                      <option>USD</option>
+                      <option>EUR</option>
+                      <option>GBP</option>
+                    </Select>
+                  </div>
+                </div>
               </div>
-              {renderLoanOrDebtSection(
-                "Associated Loans (Assets)",
-                sourceLoans,
-                setSourceLoans,
-                "loan"
+              {/* --- CHANGE: Added currency selector for other debts --- */}
+              {renderDynamicList(
+                "Other Debts",
+                otherDebts,
+                setOtherDebts,
+                [
+                  {
+                    name: "name",
+                    label: "Name",
+                    type: "text",
+                    defaultValue: "Unnamed Debt",
+                    className: "col-span-12 sm:col-span-3",
+                  },
+                  {
+                    name: "baseAmount",
+                    label: "Base Amt",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "accumulatedInterest",
+                    label: "Acc. Int",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "interestRate",
+                    label: "Rate %",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "currency",
+                    label: "Curr",
+                    type: "select",
+                    defaultValue: "PLN",
+                    options: ["PLN", "USD", "EUR", "GBP"],
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                ],
+                true
               )}
-              {renderLoanOrDebtSection(
-                "Liabilities (Debts)",
-                sourceDebts,
-                setSourceDebts,
-                "debt"
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {renderDynamicList(
+                "Positive Accounts",
+                positiveAccounts,
+                setPositiveAccounts,
+                [
+                  {
+                    name: "name",
+                    label: "Account Name",
+                    type: "text",
+                    defaultValue: "New Account",
+                    className: "col-span-12 sm:col-span-4",
+                  },
+                  {
+                    name: "balance",
+                    label: "Balance",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-4",
+                  },
+                  {
+                    name: "currency",
+                    label: "Currency",
+                    type: "select",
+                    defaultValue: "PLN",
+                    options: ["PLN", "USD", "EUR", "GBP"],
+                    className: "col-span-6 sm:col-span-3",
+                  },
+                  { name: "type", type: "hidden", defaultValue: "account" },
+                ]
               )}
-            </>
+              {renderDynamicList(
+                "Associated Loans (Money you loaned out)",
+                loans,
+                setLoans,
+                [
+                  {
+                    name: "name",
+                    label: "Name",
+                    type: "text",
+                    defaultValue: "Unnamed Loan",
+                    className: "col-span-12 sm:col-span-3",
+                  },
+                  {
+                    name: "baseAmount",
+                    label: "Base Amt",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "accumulatedInterest",
+                    label: "Acc. Int",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "interestRate",
+                    label: "Rate %",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "currency",
+                    label: "Curr",
+                    type: "select",
+                    defaultValue: "PLN",
+                    options: ["PLN", "USD", "EUR", "GBP"],
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  { name: "type", type: "hidden", defaultValue: "loan" },
+                ],
+                true
+              )}
+              {renderDynamicList(
+                "Associated Debts",
+                debts,
+                setDebts,
+                [
+                  {
+                    name: "name",
+                    label: "Name",
+                    type: "text",
+                    defaultValue: "Unnamed Debt",
+                    className: "col-span-12 sm:col-span-3",
+                  },
+                  {
+                    name: "baseAmount",
+                    label: "Base Amt",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "accumulatedInterest",
+                    label: "Acc. Int",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "interestRate",
+                    label: "Rate %",
+                    type: "number",
+                    defaultValue: 0,
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  {
+                    name: "currency",
+                    label: "Curr",
+                    type: "select",
+                    defaultValue: "PLN",
+                    options: ["PLN", "USD", "EUR", "GBP"],
+                    className: "col-span-6 sm:col-span-2",
+                  },
+                  { name: "type", type: "hidden", defaultValue: "debt" },
+                ],
+                true
+              )}
+            </div>
           )}
         </div>
       </div>
-      <div className="flex justify-end gap-2 p-4 border-t dark:border-gray-700">
+      <div className="flex justify-end gap-2 pt-6 border-t dark:border-gray-700 mt-6">
         <Button onClick={onClose} variant="outline">
           Cancel
         </Button>

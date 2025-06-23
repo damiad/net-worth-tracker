@@ -26,7 +26,11 @@ export default function Dashboard({ user, auth }) {
   const [sources, setSources] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [snapshots, setSnapshots] = useState([]);
-  const [exchangeRates, setExchangeRates] = useState({ USD: 4.0, EUR: 4.3 });
+  const [exchangeRates, setExchangeRates] = useState({
+    USD: 4.0,
+    EUR: 4.3,
+    GBP: 5.0,
+  });
   const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState(null);
@@ -110,8 +114,10 @@ export default function Dashboard({ user, auth }) {
         const ratesData = data[0].rates;
         const usdRate = ratesData.find((r) => r.code === "USD")?.mid;
         const eurRate = ratesData.find((r) => r.code === "EUR")?.mid;
-        if (usdRate && eurRate) {
-          setExchangeRates({ USD: usdRate, EUR: eurRate });
+        const gbpRate = ratesData.find((r) => r.code === "GBP")?.mid;
+
+        if (usdRate && eurRate && gbpRate) {
+          setExchangeRates({ USD: usdRate, EUR: eurRate, GBP: gbpRate });
         }
       } catch (e) {
         console.error(
@@ -133,14 +139,25 @@ export default function Dashboard({ user, auth }) {
         let lastUpdated = source.lastUpdated || null;
 
         if (source.type === "property") {
-          const propertyValue = (source.m2 || 0) * (source.pricePerM2 || 0);
-          const otherDebtsTotal = (source.otherDebts || []).reduce(
-            (sum, debt) =>
-              sum + (debt.baseAmount || 0) + (debt.accumulatedInterest || 0),
+          // --- CHANGE: Granular currency calculation for properties ---
+          const propertyValueInPLN =
+            (source.m2 || 0) *
+            (source.pricePerM2 || 0) *
+            (plnRates[source.pricePerM2Currency || "PLN"] || 1);
+          const bankDebtInPLN =
+            (source.bankDebt || 0) *
+            (plnRates[source.bankDebtCurrency || "PLN"] || 1);
+          const otherDebtsTotalInPLN = (source.otherDebts || []).reduce(
+            (sum, debt) => {
+              const debtValue =
+                (debt.baseAmount || 0) + (debt.accumulatedInterest || 0);
+              const rate = plnRates[debt.currency || "PLN"] || 1;
+              return sum + debtValue * rate;
+            },
             0
           );
-          const totalDebt = (source.bankDebt || 0) + otherDebtsTotal;
-          totalValuePLN = propertyValue - totalDebt;
+          totalValuePLN =
+            propertyValueInPLN - bankDebtInPLN - otherDebtsTotalInPLN;
         } else {
           const positiveAccounts = accounts.filter(
             (acc) => acc.sourceId === source.id && acc.type === "account"
@@ -158,15 +175,17 @@ export default function Dashboard({ user, auth }) {
           }, 0);
 
           const loansTotal = loanAccounts.reduce((sum, loan) => {
-            return (
-              sum + (loan.baseAmount || 0) + (loan.accumulatedInterest || 0)
-            );
+            const loanValue =
+              (loan.baseAmount || 0) + (loan.accumulatedInterest || 0);
+            const rate = plnRates[loan.currency || "PLN"] || 1;
+            return sum + loanValue * rate;
           }, 0);
 
           const debtTotal = debtAccounts.reduce((sum, debt) => {
-            return (
-              sum + (debt.baseAmount || 0) + (debt.accumulatedInterest || 0)
-            );
+            const debtValue =
+              (debt.baseAmount || 0) + (debt.accumulatedInterest || 0);
+            const rate = plnRates[debt.currency || "PLN"] || 1;
+            return sum + debtValue * rate;
           }, 0);
 
           totalValuePLN = positiveTotal + loansTotal - debtTotal;
@@ -301,6 +320,9 @@ export default function Dashboard({ user, auth }) {
       };
 
       if (sourceData.type === "property") {
+        // --- CHANGE: Add new granular currency fields to payload ---
+        sourcePayload.pricePerM2Currency = sourceData.pricePerM2Currency;
+        sourcePayload.bankDebtCurrency = sourceData.bankDebtCurrency;
         sourcePayload.m2 = sourceData.m2;
         sourcePayload.pricePerM2 = sourceData.pricePerM2;
         sourcePayload.bankDebt = sourceData.bankDebt;
@@ -310,6 +332,7 @@ export default function Dashboard({ user, auth }) {
             baseAmount: debt.baseAmount || 0,
             accumulatedInterest: debt.accumulatedInterest || 0,
             interestRate: debt.interestRate || 0,
+            currency: debt.currency || "PLN", // Add currency to each other debt
             lastUpdated: debt.lastUpdated
               ? debt.lastUpdated.toDate
                 ? debt.lastUpdated

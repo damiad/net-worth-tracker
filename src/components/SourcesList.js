@@ -3,16 +3,22 @@ import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 import { Button } from "./ui/Button";
 import { DollarSign, Home, Edit, Trash2 } from "lucide-react";
 
-// A new, dedicated component for a single source card.
-// This allows us to use hooks correctly at the top level.
 function SourceCard({ source, accounts, onEdit, onDelete }) {
-  const formatCurrency = (value) =>
+  // Formatter for the main card total (always PLN)
+  const formatCurrencyPLN = (value) =>
     new Intl.NumberFormat("pl-PL", {
       style: "currency",
       currency: "PLN",
     }).format(value || 0);
 
-  // Filter accounts related to this specific source once.
+  // Generic formatter for displaying values in their native currency
+  const formatMoney = (value, currency) =>
+    new Intl.NumberFormat("pl-PL", {
+      // Using 'pl-PL' for consistency, but currency symbol will be correct
+      style: "currency",
+      currency: currency,
+    }).format(value || 0);
+
   const sourceAccounts = useMemo(
     () => accounts.filter((acc) => acc.sourceId === source.id),
     [accounts, source.id]
@@ -33,9 +39,8 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     [sourceAccounts]
   );
 
-  // Memoize sorted lists to avoid re-sorting on every render.
   const sortedPositiveAccounts = useMemo(
-    () => [...positiveAccounts].sort((a, b) => b.balance - a.balance),
+    () => [...positiveAccounts].sort((a, b) => b.balance - a.balance), // Simple sort is fine as totals are PLN
     [positiveAccounts]
   );
 
@@ -43,9 +48,9 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     () =>
       [...loanAccounts].sort(
         (a, b) =>
-          a.baseAmount +
-          a.accumulatedInterest -
-          (b.baseAmount + b.accumulatedInterest)
+          b.baseAmount +
+          b.accumulatedInterest -
+          (a.baseAmount + a.accumulatedInterest)
       ),
     [loanAccounts]
   );
@@ -84,15 +89,17 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
         <span>{item.name}</span>
         <span>
           {isDebt ? "-" : "+"}
-          {formatCurrency(
-            (item.baseAmount || 0) + (item.accumulatedInterest || 0)
+          {formatMoney(
+            // --- CHANGE: Use generic money formatter
+            (item.baseAmount || 0) + (item.accumulatedInterest || 0),
+            item.currency || "PLN"
           )}
         </span>
       </div>
       <div className="flex justify-between items-center text-gray-500 dark:text-gray-400 text-[10px] mt-1 px-2">
         <span>
-          Base: {formatCurrency(item.baseAmount)} | Int:{" "}
-          {formatCurrency(item.accumulatedInterest)}
+          Base: {formatMoney(item.baseAmount, item.currency || "PLN")} | Int:{" "}
+          {formatMoney(item.accumulatedInterest, item.currency || "PLN")}
         </span>
         <span>
           {item.interestRate}% | Upd:{" "}
@@ -145,7 +152,7 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
       </CardHeader>
       <CardContent>
         <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-          {formatCurrency(source.totalValuePLN)}
+          {formatCurrencyPLN(source.totalValuePLN)}
         </p>
 
         {source.type === "property" ? (
@@ -154,7 +161,11 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
               <div className="flex justify-between items-center">
                 <span>Property Worth</span>
                 <span className="font-semibold text-green-600 dark:text-green-500">
-                  {formatCurrency((source.m2 || 0) * (source.pricePerM2 || 0))}
+                  {/* --- CHANGE: Use generic money formatter with property's currency --- */}
+                  {formatMoney(
+                    (source.m2 || 0) * (source.pricePerM2 || 0),
+                    source.pricePerM2Currency || "PLN"
+                  )}
                 </span>
               </div>
             </div>
@@ -163,7 +174,11 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
                 <div className="flex justify-between items-center">
                   <span>Bank Debt</span>
                   <span className="font-semibold text-red-600 dark:text-red-500">
-                    -{formatCurrency(source.bankDebt)}
+                    -
+                    {formatMoney(
+                      source.bankDebt,
+                      source.bankDebtCurrency || "PLN"
+                    )}
                   </span>
                 </div>
               </div>
@@ -226,7 +241,6 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
   );
 }
 
-// The main SourcesList component is now much simpler.
 export default function SourcesList({ sources, onEdit, onDelete, accounts }) {
   if (sources.length === 0) {
     return (
