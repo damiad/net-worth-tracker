@@ -18,7 +18,6 @@ export default function SourceModal({
   const [name, setName] = useState("");
   const [type, setType] = useState("bank");
 
-  // Property State
   const [m2, setM2] = useState(0);
   const [pricePerM2, setPricePerM2] = useState(0);
   const [pricePerM2Currency, setPricePerM2Currency] = useState("PLN");
@@ -26,7 +25,6 @@ export default function SourceModal({
   const [bankDebtCurrency, setBankDebtCurrency] = useState("PLN");
   const [otherDebts, setOtherDebts] = useState([]);
 
-  // Financial Account State
   const [positiveAccounts, setPositiveAccounts] = useState([]);
   const [loans, setLoans] = useState([]);
   const [debts, setDebts] = useState([]);
@@ -102,29 +100,22 @@ export default function SourceModal({
       : new Date();
     const now = new Date();
 
-    // --- CHANGE: Calculate difference in whole days ---
     const daysDiff = Math.floor(
       (now.getTime() - lastUpdateDate.getTime()) / (1000 * 3600 * 24)
     );
-
-    if (daysDiff <= 0) return; // No interest to add for same-day updates
+    if (daysDiff <= 0) return;
 
     const yearlyRate = (item.interestRate || 0) / 100;
     const interest = (item.baseAmount || 0) * yearlyRate * (daysDiff / 365);
 
     item.accumulatedInterest = (item.accumulatedInterest || 0) + interest;
     item.lastUpdated = Timestamp.now();
-
     updatedList[index] = item;
     setList(updatedList);
   };
 
   const handleSaveClick = () => {
-    let payload = {
-      id: source ? source.id : null,
-      name,
-      type,
-    };
+    let payload = { id: source ? source.id : null, name, type };
 
     if (type === "property") {
       payload = {
@@ -137,12 +128,7 @@ export default function SourceModal({
         otherDebts,
       };
     } else {
-      payload = {
-        ...payload,
-        accounts: positiveAccounts,
-        loans,
-        debts,
-      };
+      payload = { ...payload, accounts: positiveAccounts, loans, debts };
     }
     onSave(payload);
   };
@@ -234,7 +220,6 @@ export default function SourceModal({
                     </div>
                   ))}
                   <div className="col-span-12 sm:col-span-3 flex justify-end gap-1 self-end">
-                    {/* --- CHANGE: Updated button variant to blue --- */}
                     {isInterestBearing && (
                       <Button
                         onClick={() =>
@@ -524,7 +509,6 @@ export default function SourceModal({
                   { name: "type", type: "hidden", defaultValue: "account" },
                 ]
               )}
-              {/* --- CHANGE: Updated to two-row layout --- */}
               {renderDynamicList(
                 "Associated Loans (Money you loaned out)",
                 loans,

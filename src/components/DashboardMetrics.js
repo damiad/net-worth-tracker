@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useEffect } from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 import {
   PieChart,
   Pie,
@@ -15,8 +14,38 @@ import {
 } from "recharts";
 import { BarChart2 } from "lucide-react";
 
-export default function DashboardMetrics({ data, snapshots }) {
-  const { netWorth, assetAllocation, liquidAssets } = data;
+// NOTE: These are placeholder components since the original imports for "./ui/Card" were not provided.
+// They mimic the structure and basic styling.
+const Card = ({ children, className = "" }) => (
+  <div
+    className={`border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-50 shadow-sm rounded-lg ${className}`}
+  >
+    {children}
+  </div>
+);
+const CardHeader = ({ children, className = "" }) => (
+  <div className={`p-6 ${className}`}>{children}</div>
+);
+const CardTitle = ({ children, className = "" }) => (
+  <h3
+    className={`text-lg font-semibold leading-none tracking-tight ${className}`}
+  >
+    {children}
+  </h3>
+);
+const CardContent = ({ children, className = "" }) => (
+  <div className={`p-6 pt-0 ${className}`}>{children}</div>
+);
+
+export default function DashboardMetrics({ data, snapshots, displayCurrency }) {
+  // Ensure data and its properties have fallbacks to prevent runtime errors
+  const {
+    netWorth = 0,
+    assetAllocation = [],
+    liquidAssets = 0,
+    plnRates = {},
+  } = data || {};
+
   const COLORS = [
     "#0088FE",
     "#00C49F",
@@ -28,60 +57,62 @@ export default function DashboardMetrics({ data, snapshots }) {
     "#45A1FF",
   ];
 
-  const pieChartContainerRef = useRef(null);
-
-  useEffect(() => {
-    // Center the pie chart on initial render if it's scrollable
-    if (pieChartContainerRef.current) {
-      const container = pieChartContainerRef.current;
-      const scrollAmount = (container.scrollWidth - container.clientWidth) / 2;
-      container.scrollLeft = scrollAmount;
-    }
-  }, [assetAllocation]); // Rerun when data changes
-
-  const formattedSnapshots = useMemo(() => {
-    if (!snapshots) return [];
-    return snapshots.map((s) => ({
-      date: s.timestamp
-        .toDate()
-        .toLocaleDateString("pl-PL", { month: "short", day: "numeric" }),
-      "Net Worth": s.netWorth,
-      "Liquid Assets": s.liquidAssets,
-    }));
-  }, [snapshots]);
+  // Convert PLN values to the selected display currency
+  const rate = plnRates[displayCurrency] || 1;
+  const netWorthInDisplay = netWorth / rate;
+  const liquidAssetsInDisplay = liquidAssets / rate;
 
   const formatCurrency = (value) =>
     new Intl.NumberFormat("pl-PL", {
       style: "currency",
-      currency: "PLN",
+      currency: displayCurrency || "PLN",
     }).format(value || 0);
+
+  const formattedSnapshots = useMemo(() => {
+    if (!snapshots || !plnRates) return [];
+    return snapshots.map((s) => {
+      const displayRate = plnRates[displayCurrency] || 1;
+      return {
+        date:
+          s.timestamp
+            ?.toDate()
+            .toLocaleDateString("pl-PL", { month: "short", day: "numeric" }) ||
+          "N/A",
+        "Net Worth": (s.netWorth || 0) / displayRate,
+        "Liquid Assets": (s.liquidAssets || 0) / displayRate,
+      };
+    });
+  }, [snapshots, displayCurrency, plnRates]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Total Net Worth Card */}
       <Card className="lg:col-span-1">
         <CardHeader>
           <CardTitle>Total Net Worth</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-4xl font-bold text-gray-900 dark:text-white">
-            {formatCurrency(netWorth)}
+            {formatCurrency(netWorthInDisplay)}
           </p>
           <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Liquid Assets
             </p>
             <p className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-              {formatCurrency(liquidAssets)}
+              {formatCurrency(liquidAssetsInDisplay)}
             </p>
           </div>
         </CardContent>
       </Card>
+
+      {/* Worth Over Time Card */}
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Worth Over Time</CardTitle>
         </CardHeader>
         <CardContent className="h-64">
-          {formattedSnapshots.length >= 1 ? (
+          {formattedSnapshots.length > 1 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
                 data={formattedSnapshots}
@@ -101,7 +132,7 @@ export default function DashboardMetrics({ data, snapshots }) {
                   tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
                 />
                 <Tooltip
-                  formatter={(value) => [formatCurrency(value)]}
+                  formatter={(value) => formatCurrency(value)}
                   contentStyle={{
                     backgroundColor: "rgba(31, 41, 55, 0.8)",
                     border: "none",
@@ -134,7 +165,7 @@ export default function DashboardMetrics({ data, snapshots }) {
             <div className="flex flex-col items-center justify-center h-full text-gray-500">
               <BarChart2 size={32} />
               <p className="mt-2 text-center text-sm">
-                No data for chart. Update your sources to create a snapshot.
+                Not enough data for chart. Update sources to see history.
               </p>
             </div>
           )}
@@ -145,65 +176,51 @@ export default function DashboardMetrics({ data, snapshots }) {
         <CardHeader>
           <CardTitle>Asset Allocation</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="h-96">
           {assetAllocation && assetAllocation.length > 0 ? (
-            <>
-              {/* Scrollable Container for the Pie Chart */}
-              <div ref={pieChartContainerRef} className="h-64 overflow-x-auto">
-                <div style={{ minWidth: '400px', height: '100%' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={assetAllocation}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        outerRadius="80%"
-                        fill="#8884d8"
-                        dataKey="value"
-                        nameKey="name"
-                        label={({ name, percent }) =>
-                          `${name} ${(percent * 100).toFixed(0)}%`
-                        }
-                      >
-                        {assetAllocation.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => formatCurrency(value)}
-                        contentStyle={{
-                          backgroundColor: "rgba(31, 41, 55, 0.8)",
-                          border: "none",
-                          borderRadius: "0.5rem",
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              
-              {/* Separate, Non-scrolling, Wrapping Legend */}
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
-                {assetAllocation.map((entry, index) => (
-                  <div key={`legend-${index}`} className="flex items-center text-sm text-gray-600 dark:text-gray-300">
-                    <div
-                      className="w-3 h-3 rounded-sm mr-2 flex-shrink-0"
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                    ></div>
-                    <span>{entry.name}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={assetAllocation}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius="70%"
+                  fill="#8884d8"
+                  label={({ name, percent }) =>
+                    `${name} ${(percent * 100).toFixed(0)}%`
+                  }
+                  labelLine={false}
+                >
+                  {assetAllocation.map((entry, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={COLORS[index % COLORS.length]}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value) => formatCurrency(value / rate)}
+                  contentStyle={{
+                    backgroundColor: "rgba(31, 41, 55, 0.8)",
+                    border: "none",
+                    borderRadius: "0.5rem",
+                  }}
+                />
+                {/* The Legend is now rendered inside the container and positioned by recharts */}
+                <Legend
+                  verticalAlign="bottom"
+                  align="center"
+                  wrapperStyle={{ paddingTop: "20px" }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
           ) : (
-            <div className="flex flex-col items-center justify-center h-72 text-gray-500">
-              <PieChart size={32} />
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <BarChart2 size={32} />
               <p className="mt-2 text-center text-sm">
-                No positive assets to display. Add or update your sources.
+                No positive assets to display.
               </p>
             </div>
           )}

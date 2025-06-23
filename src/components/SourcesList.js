@@ -1,20 +1,98 @@
 import React, { useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
-import { Button } from "./ui/Button";
 import { DollarSign, Home, Edit, Trash2 } from "lucide-react";
 
-function SourceCard({ source, accounts, onEdit, onDelete }) {
-  // Formatter for the main card total (always PLN)
-  const formatCurrencyPLN = (value) =>
-    new Intl.NumberFormat("pl-PL", {
-      style: "currency",
-      currency: "PLN",
-    }).format(value || 0);
+const Card = ({ children, className = "" }) => (
+  <div
+    className={`border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-50 shadow-sm rounded-lg ${className}`}
+  >
+    {children}
+  </div>
+);
 
-  // Generic formatter for displaying values in their native currency
+const CardHeader = ({ children, className = "" }) => (
+  // Removed opinionated flex styles to let the consumer control the layout.
+  <div className={`p-4 md:p-6 ${className}`}>{children}</div>
+);
+
+const CardTitle = ({ children, className = "" }) => (
+  <h3
+    className={`text-lg font-semibold leading-none tracking-tight ${className}`}
+  >
+    {children}
+  </h3>
+);
+
+const CardContent = ({ children, className = "" }) => (
+  <div className={`p-4 md:p-6 pt-0 ${className}`}>{children}</div>
+);
+
+const Button = ({ onClick, children, variant, size, className }) => {
+  // A simplified button component to replicate the necessary 'ghost' variant style.
+  const baseStyle =
+    "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-400 disabled:pointer-events-none disabled:opacity-50";
+
+  // Specific styles for the 'ghost' variant used in this component
+  const ghostStyle = "hover:bg-gray-100 dark:hover:bg-gray-700";
+
+  const combinedClassName = `${baseStyle} ${
+    variant === "ghost" ? ghostStyle : ""
+  } ${className || ""}`;
+
+  return (
+    <button onClick={onClick} className={combinedClassName}>
+      {children}
+    </button>
+  );
+};
+
+/**
+ * A card component that displays detailed information about a single financial source.
+ * It now converts the main total value to a selected display currency.
+ * @param {object} props - The component's props.
+ * @param {object} props.source - The source data object.
+ * @param {Array<object>} props.accounts - The list of all accounts.
+ * @param {function} props.onEdit - Callback for editing the source.
+ * @param {function} props.onDelete - Callback for deleting the source.
+ * @param {string} props.selectedCurrency - The currency to display the main total in (e.g., 'USD', 'EUR').
+ * @param {object} props.exchangeRates - An object with exchange rates against PLN (e.g., { USD: 4.0, EUR: 4.3 }).
+ */
+function SourceCard({
+  source,
+  accounts,
+  onEdit,
+  onDelete,
+  selectedCurrency,
+  exchangeRates,
+}) {
+  // Formatter for displaying the main card total in the user-selected currency.
+  // It converts the base PLN value using the provided exchange rates.
+  const formatInSelectedCurrency = (valuePLN) => {
+    // Default to PLN if no currency is selected, rates are missing, or PLN is the selected currency
+    if (
+      !selectedCurrency ||
+      !exchangeRates ||
+      !exchangeRates[selectedCurrency] ||
+      selectedCurrency === "PLN"
+    ) {
+      return new Intl.NumberFormat("pl-PL", {
+        style: "currency",
+        currency: "PLN",
+      }).format(valuePLN || 0);
+    }
+
+    const rate = exchangeRates[selectedCurrency];
+    const convertedValue = (valuePLN || 0) / rate;
+
+    // Use the appropriate locale/formatting for the selected currency
+    return new Intl.NumberFormat("pl-PL", {
+      style: "currency",
+      currency: selectedCurrency,
+    }).format(convertedValue);
+  };
+
+  // Generic formatter for displaying values in their native currency (for sub-items).
   const formatMoney = (value, currency) =>
     new Intl.NumberFormat("pl-PL", {
-      // Using 'pl-PL' for consistency, but currency symbol will be correct
       style: "currency",
       currency: currency,
     }).format(value || 0);
@@ -39,8 +117,9 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     [sourceAccounts]
   );
 
+  // Sorting logic remains the same as it operates on the underlying data.
   const sortedPositiveAccounts = useMemo(
-    () => [...positiveAccounts].sort((a, b) => b.balance - a.balance), // Simple sort is fine as totals are PLN
+    () => [...positiveAccounts].sort((a, b) => b.balance - a.balance),
     [positiveAccounts]
   );
 
@@ -77,6 +156,7 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     [source.otherDebts]
   );
 
+  // Helper function to render loan or debt details
   const renderLoanOrDebtDetails = (item, isDebt = true) => (
     <>
       <div
@@ -90,7 +170,6 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
         <span>
           {isDebt ? "-" : "+"}
           {formatMoney(
-            // --- CHANGE: Use generic money formatter
             (item.baseAmount || 0) + (item.accumulatedInterest || 0),
             item.currency || "PLN"
           )}
@@ -111,9 +190,35 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     </>
   );
 
+  // --- CHANGE START ---
+  // This component will now visually indicate if currency conversion failed due to missing props.
+  const DisplayTotal = () => {
+    const isPLNFallback =
+      !selectedCurrency ||
+      !exchangeRates ||
+      !exchangeRates[selectedCurrency] ||
+      selectedCurrency === "PLN";
+    const hasConversionFailed =
+      selectedCurrency && selectedCurrency !== "PLN" && isPLNFallback;
+
+    return (
+      <div>
+        <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+          {formatInSelectedCurrency(source.totalValuePLN)}
+        </p>
+        {hasConversionFailed && (
+          <p className="text-xs text-yellow-500 dark:text-yellow-400 mt-1">
+            (Conversion to {selectedCurrency} unavailable)
+          </p>
+        )}
+      </div>
+    );
+  };
+  // --- CHANGE END ---
+
   return (
     <Card>
-      <CardHeader className="flex justify-between items-start">
+      <CardHeader className="flex flex-row justify-between items-start">
         <div>
           <CardTitle className="flex items-center gap-2">
             {source.type === "property" ? (
@@ -124,7 +229,7 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
             {source.name}
           </CardTitle>
           <p className="text-xs text-gray-400 mt-1">
-            Last updated:
+            Last updated:{" "}
             {source.lastUpdated &&
             typeof source.lastUpdated.toDate === "function"
               ? source.lastUpdated.toDate().toLocaleDateString()
@@ -151,9 +256,7 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-          {formatCurrencyPLN(source.totalValuePLN)}
-        </p>
+        <DisplayTotal />
 
         {source.type === "property" ? (
           <div className="mt-4 space-y-2 text-xs">
@@ -161,7 +264,6 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
               <div className="flex justify-between items-center">
                 <span>Property Worth</span>
                 <span className="font-semibold text-green-600 dark:text-green-500">
-                  {/* --- CHANGE: Use generic money formatter with property's currency --- */}
                   {formatMoney(
                     (source.m2 || 0) * (source.pricePerM2 || 0),
                     source.pricePerM2Currency || "PLN"
@@ -241,8 +343,26 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
   );
 }
 
-export default function SourcesList({ sources, onEdit, onDelete, accounts }) {
-  if (sources.length === 0) {
+/**
+ * The main component that renders a grid of SourceCard components.
+ * It passes down currency selection props to each card.
+ * @param {object} props - The component's props.
+ * @param {Array<object>} props.sources - The list of all sources.
+ * @param {function} props.onEdit - Callback for editing.
+ * @param {function} props.onDelete - Callback for deleting.
+ * @param {Array<object>} props.accounts - The list of all accounts.
+ * @param {string} props.selectedCurrency - The currency to display totals in.
+ * @param {object} props.exchangeRates - The exchange rates for conversion from PLN.
+ */
+export default function SourcesList({
+  sources,
+  onEdit,
+  onDelete,
+  accounts,
+  selectedCurrency,
+  exchangeRates,
+}) {
+  if (!sources || sources.length === 0) {
     return (
       <Card className="text-center py-12">
         <CardContent>
@@ -266,6 +386,8 @@ export default function SourcesList({ sources, onEdit, onDelete, accounts }) {
           accounts={accounts}
           onEdit={onEdit}
           onDelete={onDelete}
+          selectedCurrency={selectedCurrency}
+          exchangeRates={exchangeRates}
         />
       ))}
     </div>

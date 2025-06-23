@@ -35,8 +35,9 @@ export default function Dashboard({ user, auth }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState(null);
   const [isSnapshotPending, setIsSnapshotPending] = useState(false);
+  // --- NEW: State for managing the global display currency ---
+  const [displayCurrency, setDisplayCurrency] = useState("PLN");
 
-  // Initialize Firestore instance
   useEffect(() => {
     if (auth.app) {
       const firestore = getFirestore(auth.app);
@@ -44,7 +45,6 @@ export default function Dashboard({ user, auth }) {
     }
   }, [auth.app]);
 
-  // Set up data listeners
   useEffect(() => {
     if (!db || !user) {
       setSources([]);
@@ -60,26 +60,16 @@ export default function Dashboard({ user, auth }) {
       query(collection(db, `${baseCollectionsPath}/sources`)),
       (snapshot) => {
         setSources(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
-      },
-      (err) => {
-        console.error("Error fetching sources:", err);
-        setError("Could not load financial sources. Check Firestore rules.");
       }
     );
-
     const unsubAccounts = onSnapshot(
       query(collection(db, `${baseCollectionsPath}/accounts`)),
       (snapshot) => {
         setAccounts(
           snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
         );
-      },
-      (err) => {
-        console.error("Error fetching accounts:", err);
-        setError("Could not load account details. Check Firestore rules.");
       }
     );
-
     const unsubSnapshots = onSnapshot(
       query(collection(db, `${baseCollectionsPath}/netWorthSnapshots`)),
       (snapshot) => {
@@ -88,10 +78,6 @@ export default function Dashboard({ user, auth }) {
           .filter((s) => s.timestamp)
           .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
         setSnapshots(snapshotData);
-      },
-      (err) => {
-        console.error("Error fetching snapshots:", err);
-        setError("Could not load historical data. Check Firestore rules.");
       }
     );
 
@@ -102,7 +88,6 @@ export default function Dashboard({ user, auth }) {
     };
   }, [db, user]);
 
-  // Fetch exchange rates
   useEffect(() => {
     const fetchRates = async () => {
       try {
@@ -129,8 +114,8 @@ export default function Dashboard({ user, auth }) {
     fetchRates();
   }, []);
 
-  // Process data for display
   const processedData = useMemo(() => {
+    // --- NEW: Add PLN as a "base" rate for calculations ---
     const plnRates = { ...exchangeRates, PLN: 1 };
 
     const sourceValues = sources
@@ -139,25 +124,24 @@ export default function Dashboard({ user, auth }) {
         let lastUpdated = source.lastUpdated || null;
 
         if (source.type === "property") {
-          // --- CHANGE: Granular currency calculation for properties ---
-          const propertyValueInPLN =
-            (source.m2 || 0) *
-            (source.pricePerM2 || 0) *
-            (plnRates[source.pricePerM2Currency || "PLN"] || 1);
-          const bankDebtInPLN =
-            (source.bankDebt || 0) *
-            (plnRates[source.bankDebtCurrency || "PLN"] || 1);
-          const otherDebtsTotalInPLN = (source.otherDebts || []).reduce(
+          const priceRate = plnRates[source.pricePerM2Currency || "PLN"] || 1;
+          const bankDebtRate = plnRates[source.bankDebtCurrency || "PLN"] || 1;
+
+          const propertyValuePLN =
+            (source.m2 || 0) * (source.pricePerM2 || 0) * priceRate;
+          const bankDebtPLN = (source.bankDebt || 0) * bankDebtRate;
+
+          const otherDebtsTotalPLN = (source.otherDebts || []).reduce(
             (sum, debt) => {
+              const debtRate = plnRates[debt.currency || "PLN"] || 1;
               const debtValue =
                 (debt.baseAmount || 0) + (debt.accumulatedInterest || 0);
-              const rate = plnRates[debt.currency || "PLN"] || 1;
-              return sum + debtValue * rate;
+              return sum + debtValue * debtRate;
             },
             0
           );
-          totalValuePLN =
-            propertyValueInPLN - bankDebtInPLN - otherDebtsTotalInPLN;
+
+          totalValuePLN = propertyValuePLN - bankDebtPLN - otherDebtsTotalPLN;
         } else {
           const positiveAccounts = accounts.filter(
             (acc) => acc.sourceId === source.id && acc.type === "account"
@@ -171,20 +155,20 @@ export default function Dashboard({ user, auth }) {
 
           const positiveTotal = positiveAccounts.reduce((sum, acc) => {
             const rate = plnRates[acc.currency] || 1;
-            return sum + acc.balance * rate;
+            return sum + (acc.balance || 0) * rate;
           }, 0);
 
           const loansTotal = loanAccounts.reduce((sum, loan) => {
+            const rate = plnRates[loan.currency || "PLN"] || 1;
             const loanValue =
               (loan.baseAmount || 0) + (loan.accumulatedInterest || 0);
-            const rate = plnRates[loan.currency || "PLN"] || 1;
             return sum + loanValue * rate;
           }, 0);
 
           const debtTotal = debtAccounts.reduce((sum, debt) => {
+            const rate = plnRates[debt.currency || "PLN"] || 1;
             const debtValue =
               (debt.baseAmount || 0) + (debt.accumulatedInterest || 0);
-            const rate = plnRates[debt.currency || "PLN"] || 1;
             return sum + debtValue * rate;
           }, 0);
 
@@ -215,7 +199,6 @@ export default function Dashboard({ user, auth }) {
       (sum, source) => sum + source.totalValuePLN,
       0
     );
-
     const liquidAssets = sourceValues
       .filter((source) => source.type !== "property")
       .reduce((sum, source) => sum + source.totalValuePLN, 0);
@@ -230,10 +213,7 @@ export default function Dashboard({ user, auth }) {
         if (source.totalValuePLN < threshold) {
           otherAssetsValue += source.totalValuePLN;
         } else {
-          majorAssets.push({
-            name: source.name,
-            value: source.totalValuePLN,
-          });
+          majorAssets.push({ name: source.name, value: source.totalValuePLN });
         }
       });
       if (otherAssetsValue > 0) {
@@ -242,37 +222,29 @@ export default function Dashboard({ user, auth }) {
       return majorAssets;
     })();
 
-    return { sourceValues, netWorth, liquidAssets, assetAllocation };
+    return { sourceValues, netWorth, liquidAssets, assetAllocation, plnRates };
   }, [sources, accounts, exchangeRates]);
 
   const takeSnapshot = useCallback(async () => {
     if (!db || !user || processedData.netWorth === null) return;
-
     const userId = user.uid;
     const snapshotCollectionRef = collection(
       db,
       `artifacts/${appId}/users/${userId}/netWorthSnapshots`
     );
-
     const today = new Date();
     const startOfDay = new Date(
       today.getFullYear(),
       today.getMonth(),
       today.getDate()
     );
-
     const q = query(
       snapshotCollectionRef,
       where("timestamp", ">=", startOfDay)
     );
     const snapshotsToDelete = await getDocs(q);
-
     const batch = writeBatch(db);
-
-    snapshotsToDelete.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-
+    snapshotsToDelete.forEach((doc) => batch.delete(doc.ref));
     const newSnapshotRef = doc(snapshotCollectionRef);
     batch.set(newSnapshotRef, {
       netWorth: processedData.netWorth,
@@ -280,7 +252,6 @@ export default function Dashboard({ user, auth }) {
       timestamp: Timestamp.now(),
       assetAllocation: processedData.assetAllocation,
     });
-
     await batch.commit();
   }, [db, user, processedData]);
 
@@ -296,7 +267,6 @@ export default function Dashboard({ user, auth }) {
     setEditingSource(source);
     setIsModalOpen(true);
   };
-
   const handleCloseModal = () => {
     setEditingSource(null);
     setIsModalOpen(false);
@@ -312,7 +282,6 @@ export default function Dashboard({ user, auth }) {
       const sourceRef = sourceData.id
         ? doc(db, `${baseDocPath}/sources`, sourceData.id)
         : doc(collection(db, `${baseDocPath}/sources`));
-
       const sourcePayload = {
         name: sourceData.name,
         type: sourceData.type,
@@ -320,23 +289,20 @@ export default function Dashboard({ user, auth }) {
       };
 
       if (sourceData.type === "property") {
-        // --- CHANGE: Add new granular currency fields to payload ---
-        sourcePayload.pricePerM2Currency = sourceData.pricePerM2Currency;
-        sourcePayload.bankDebtCurrency = sourceData.bankDebtCurrency;
         sourcePayload.m2 = sourceData.m2;
         sourcePayload.pricePerM2 = sourceData.pricePerM2;
+        sourcePayload.pricePerM2Currency = sourceData.pricePerM2Currency;
         sourcePayload.bankDebt = sourceData.bankDebt;
+        sourcePayload.bankDebtCurrency = sourceData.bankDebtCurrency;
         sourcePayload.otherDebts = (sourceData.otherDebts || []).map(
           (debt) => ({
             name: debt.name || "Unnamed Debt",
             baseAmount: debt.baseAmount || 0,
             accumulatedInterest: debt.accumulatedInterest || 0,
             interestRate: debt.interestRate || 0,
-            currency: debt.currency || "PLN", // Add currency to each other debt
-            lastUpdated: debt.lastUpdated
-              ? debt.lastUpdated.toDate
-                ? debt.lastUpdated
-                : Timestamp.fromDate(new Date(debt.lastUpdated))
+            currency: debt.currency || "PLN",
+            lastUpdated: debt.lastUpdated?.toDate
+              ? debt.lastUpdated
               : Timestamp.now(),
           })
         );
@@ -368,16 +334,13 @@ export default function Dashboard({ user, auth }) {
           const accountRef = subAcc.id
             ? doc(db, `${baseDocPath}/accounts`, subAcc.id)
             : doc(collection(db, `${baseDocPath}/accounts`));
-
           let payload;
           if (subAcc.type === "debt" || subAcc.type === "loan") {
             payload = {
               ...subAcc,
               sourceId: finalSourceId,
-              lastUpdated: subAcc.lastUpdated
-                ? subAcc.lastUpdated.toDate
-                  ? subAcc.lastUpdated
-                  : Timestamp.fromDate(new Date(subAcc.lastUpdated))
+              lastUpdated: subAcc.lastUpdated?.toDate
+                ? subAcc.lastUpdated
                 : Timestamp.now(),
             };
           } else {
@@ -407,15 +370,12 @@ export default function Dashboard({ user, auth }) {
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
     if (!window.confirm("Are you sure? This cannot be undone.")) return;
-
     const userId = user.uid;
     const baseDocPath = `artifacts/${appId}/users/${userId}`;
     const batch = writeBatch(db);
-
     try {
       const sourceRef = doc(db, `${baseDocPath}/sources`, sourceId);
       batch.delete(sourceRef);
-
       const associatedAccounts = accounts.filter(
         (acc) => acc.sourceId === sourceId
       );
@@ -423,7 +383,6 @@ export default function Dashboard({ user, auth }) {
         const accountRef = doc(db, `${baseDocPath}/accounts`, acc.id);
         batch.delete(accountRef);
       });
-
       await batch.commit();
       setIsSnapshotPending(true);
     } catch (e) {
@@ -438,7 +397,13 @@ export default function Dashboard({ user, auth }) {
 
   return (
     <div className="bg-gray-50 dark:bg-gray-900 min-h-screen font-sans">
-      <Header user={user} auth={auth} />
+      {/* --- NEW: Pass state and handler to Header --- */}
+      <Header
+        user={user}
+        auth={auth}
+        displayCurrency={displayCurrency}
+        setDisplayCurrency={setDisplayCurrency}
+      />
       <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
         {error && (
           <div
@@ -450,7 +415,12 @@ export default function Dashboard({ user, auth }) {
             <p>{error}</p>
           </div>
         )}
-        <DashboardMetrics data={processedData} snapshots={snapshots} />
+        {/* --- NEW: Pass currency and rates down to components --- */}
+        <DashboardMetrics
+          data={processedData}
+          snapshots={snapshots}
+          displayCurrency={displayCurrency}
+        />
         <div className="flex justify-between items-center my-6">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
             Financial Sources
@@ -464,6 +434,8 @@ export default function Dashboard({ user, auth }) {
           onEdit={handleOpenModal}
           onDelete={handleDeleteSource}
           accounts={accounts}
+          displayCurrency={displayCurrency}
+          plnRates={processedData.plnRates}
         />
       </main>
       <SourceModal

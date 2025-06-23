@@ -1,9 +1,15 @@
 import React from "react";
-import { signOut } from "firebase/auth";
 import { Button } from "./ui/Button";
-import { DollarSign, LogOut } from "lucide-react";
+import { Select } from "./ui/Select";
+import { LogOut, DollarSign } from "lucide-react";
+import { signOut } from "firebase/auth";
 
-export default function Header({ user, auth }) {
+export default function Header({
+  user,
+  auth,
+  displayCurrency,
+  setDisplayCurrency,
+}) {
   const handleLogout = async () => {
     if (!auth) return;
     await signOut(auth);
@@ -20,6 +26,18 @@ export default function Header({ user, auth }) {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <div className="w-28">
+              <Select
+                value={displayCurrency}
+                onChange={(e) => setDisplayCurrency(e.target.value)}
+                className="text-xs"
+              >
+                <option>PLN</option>
+                <option>USD</option>
+                <option>EUR</option>
+                <option>GBP</option>
+              </Select>
+            </div>
             <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:block">
               {user.email || "Welcome!"}
             </span>
