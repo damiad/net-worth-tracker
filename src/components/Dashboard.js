@@ -123,10 +123,6 @@ export default function Dashboard({ user, auth }) {
     fetchRates();
   }, []);
 
-  const sortedAccounts = useMemo(() => {
-    return [...accounts].sort((a, b) => b.balance - a.balance);
-  }, [accounts]);
-
   // Process data for display
   const processedData = useMemo(() => {
     const plnRates = { ...exchangeRates, PLN: 1 };
@@ -146,15 +142,29 @@ export default function Dashboard({ user, auth }) {
           const totalDebt = (source.bankDebt || 0) + otherDebtsTotal;
           totalValuePLN = propertyValue - totalDebt;
         } else {
-          const sourceAccounts = accounts.filter(
-            (acc) => acc.sourceId === source.id
+          const positiveAccounts = accounts.filter(
+            (acc) => acc.sourceId === source.id && acc.type === "account"
           );
-          if (sourceAccounts.length > 0) {
-            totalValuePLN = sourceAccounts.reduce((sum, acc) => {
-              const rate = plnRates[acc.currency] || 1;
-              return sum + acc.balance * rate;
-            }, 0);
-            lastUpdated = sourceAccounts.reduce(
+          const debtAccounts = accounts.filter(
+            (acc) => acc.sourceId === source.id && acc.type === "debt"
+          );
+
+          const positiveTotal = positiveAccounts.reduce((sum, acc) => {
+            const rate = plnRates[acc.currency] || 1;
+            return sum + acc.balance * rate;
+          }, 0);
+
+          const debtTotal = debtAccounts.reduce((sum, debt) => {
+            return (
+              sum + (debt.baseAmount || 0) + (debt.accumulatedInterest || 0)
+            );
+          }, 0);
+
+          totalValuePLN = positiveTotal - debtTotal;
+
+          const allSubAccounts = [...positiveAccounts, ...debtAccounts];
+          if (allSubAccounts.length > 0) {
+            lastUpdated = allSubAccounts.reduce(
               (latest, acc) =>
                 !latest ||
                 (acc.lastUpdated &&
@@ -174,6 +184,7 @@ export default function Dashboard({ user, auth }) {
       0
     );
 
+    // --- LIQUID ASSETS CALCULATION ---
     const liquidAssets = sourceValues
       .filter((source) => source.type !== "property")
       .reduce((sum, source) => sum + source.totalValuePLN, 0);
@@ -200,38 +211,47 @@ export default function Dashboard({ user, auth }) {
       return majorAssets;
     })();
 
+    // --- LIQUID ASSETS ADDED TO RETURN OBJECT ---
     return { sourceValues, netWorth, liquidAssets, assetAllocation };
   }, [sources, accounts, exchangeRates]);
 
   const takeSnapshot = useCallback(async () => {
     if (!db || !user || processedData.netWorth === null) return;
+
     const userId = user.uid;
     const snapshotCollectionRef = collection(
       db,
       `artifacts/${appId}/users/${userId}/netWorthSnapshots`
     );
+
     const today = new Date();
     const startOfDay = new Date(
       today.getFullYear(),
       today.getMonth(),
       today.getDate()
     );
+
     const q = query(
       snapshotCollectionRef,
       where("timestamp", ">=", startOfDay)
     );
     const snapshotsToDelete = await getDocs(q);
+
     const batch = writeBatch(db);
+
     snapshotsToDelete.forEach((doc) => {
       batch.delete(doc.ref);
     });
+
     const newSnapshotRef = doc(snapshotCollectionRef);
+    // --- LIQUID ASSETS ADDED TO SNAPSHOT PAYLOAD ---
     batch.set(newSnapshotRef, {
       netWorth: processedData.netWorth,
       liquidAssets: processedData.liquidAssets,
       timestamp: Timestamp.now(),
       assetAllocation: processedData.assetAllocation,
     });
+
     await batch.commit();
   }, [db, user, processedData]);
 
@@ -258,7 +278,6 @@ export default function Dashboard({ user, auth }) {
     const userId = user.uid;
     const baseDocPath = `artifacts/${appId}/users/${userId}`;
     const batch = writeBatch(db);
-    const timestamp = Timestamp.now();
 
     try {
       const sourceRef = sourceData.id
@@ -268,44 +287,73 @@ export default function Dashboard({ user, auth }) {
       const sourcePayload = {
         name: sourceData.name,
         type: sourceData.type,
-        lastUpdated: timestamp,
+        lastUpdated: Timestamp.now(),
       };
 
       if (sourceData.type === "property") {
         sourcePayload.m2 = sourceData.m2;
         sourcePayload.pricePerM2 = sourceData.pricePerM2;
         sourcePayload.bankDebt = sourceData.bankDebt;
-        sourcePayload.otherDebts = sourceData.otherDebts;
+        sourcePayload.otherDebts = (sourceData.otherDebts || []).map(
+          (debt) => ({
+            name: debt.name || "Unnamed Debt",
+            baseAmount: debt.baseAmount || 0,
+            accumulatedInterest: debt.accumulatedInterest || 0,
+            interestRate: debt.interestRate || 0,
+            lastUpdated: debt.lastUpdated
+              ? debt.lastUpdated.toDate
+                ? debt.lastUpdated
+                : Timestamp.fromDate(new Date(debt.lastUpdated))
+              : Timestamp.now(),
+          })
+        );
       }
       batch.set(sourceRef, sourcePayload, { merge: true });
 
-      if (sourceData.type !== "property" && sourceData.accounts) {
-        const existingAccounts = accounts.filter(
+      if (sourceData.type !== "property") {
+        const allSubAccounts = [
+          ...(sourceData.accounts || []),
+          ...(sourceData.debts || []),
+        ];
+        const existingSubAccounts = accounts.filter(
           (acc) => acc.sourceId === sourceRef.id
         );
-        const submittedAccountIds = sourceData.accounts
+        const submittedSubAccountIds = allSubAccounts
           .map((a) => a.id)
           .filter(Boolean);
-        existingAccounts.forEach((existingAcc) => {
-          if (!submittedAccountIds.includes(existingAcc.id)) {
-            const accToDeleteRef = doc(
-              db,
-              `${baseDocPath}/accounts`,
-              existingAcc.id
-            );
-            batch.delete(accToDeleteRef);
+
+        existingSubAccounts.forEach((existing) => {
+          if (!submittedSubAccountIds.includes(existing.id)) {
+            const refToDelete = doc(db, `${baseDocPath}/accounts`, existing.id);
+            batch.delete(refToDelete);
           }
         });
-        sourceData.accounts.forEach((acc) => {
+
+        allSubAccounts.forEach((subAcc) => {
           const finalSourceId = sourceRef.id;
-          const accountRef = acc.id
-            ? doc(db, `${baseDocPath}/accounts`, acc.id)
+          const accountRef = subAcc.id
+            ? doc(db, `${baseDocPath}/accounts`, subAcc.id)
             : doc(collection(db, `${baseDocPath}/accounts`));
-          batch.set(
-            accountRef,
-            { ...acc, sourceId: finalSourceId, lastUpdated: timestamp },
-            { merge: true }
-          );
+
+          let payload;
+          if (subAcc.type === "debt") {
+            payload = {
+              ...subAcc,
+              sourceId: finalSourceId,
+              lastUpdated: subAcc.lastUpdated
+                ? subAcc.lastUpdated.toDate
+                  ? subAcc.lastUpdated
+                  : Timestamp.fromDate(new Date(subAcc.lastUpdated))
+                : Timestamp.now(),
+            };
+          } else {
+            payload = {
+              ...subAcc,
+              sourceId: finalSourceId,
+              lastUpdated: Timestamp.now(),
+            };
+          }
+          batch.set(accountRef, payload, { merge: true });
         });
       }
 
@@ -325,12 +373,15 @@ export default function Dashboard({ user, auth }) {
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
     if (!window.confirm("Are you sure? This cannot be undone.")) return;
+
     const userId = user.uid;
     const baseDocPath = `artifacts/${appId}/users/${userId}`;
     const batch = writeBatch(db);
+
     try {
       const sourceRef = doc(db, `${baseDocPath}/sources`, sourceId);
       batch.delete(sourceRef);
+
       const associatedAccounts = accounts.filter(
         (acc) => acc.sourceId === sourceId
       );
@@ -338,6 +389,7 @@ export default function Dashboard({ user, auth }) {
         const accountRef = doc(db, `${baseDocPath}/accounts`, acc.id);
         batch.delete(accountRef);
       });
+
       await batch.commit();
       setIsSnapshotPending(true);
     } catch (e) {
@@ -367,19 +419,17 @@ export default function Dashboard({ user, auth }) {
         <DashboardMetrics data={processedData} snapshots={snapshots} />
         <div className="flex justify-between items-center my-6">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-            {" "}
-            Financial Sources{" "}
+            Financial Sources
           </h2>
           <Button onClick={() => handleOpenModal()} className="gap-2">
-            {" "}
-            <PlusCircle size={16} /> Add Source{" "}
+            <PlusCircle size={16} /> Add Source
           </Button>
         </div>
         <SourcesList
           sources={processedData.sourceValues}
           onEdit={handleOpenModal}
           onDelete={handleDeleteSource}
-          accounts={sortedAccounts}
+          accounts={accounts} // Pass unsorted accounts
         />
       </main>
       <SourceModal
