@@ -138,7 +138,11 @@ export default function Dashboard({ user, auth }) {
 
         if (source.type === "property") {
           const propertyValue = (source.m2 || 0) * (source.pricePerM2 || 0);
-          const totalDebt = (source.bankDebt || 0) + (source.otherDebt || 0);
+          const otherDebtsTotal = (source.otherDebts || []).reduce(
+            (sum, debt) => sum + (debt.amount || 0),
+            0
+          );
+          const totalDebt = (source.bankDebt || 0) + otherDebtsTotal;
           totalValuePLN = propertyValue - totalDebt;
         } else {
           const sourceAccounts = accounts.filter(
@@ -279,7 +283,7 @@ export default function Dashboard({ user, auth }) {
         sourcePayload.m2 = sourceData.m2;
         sourcePayload.pricePerM2 = sourceData.pricePerM2;
         sourcePayload.bankDebt = sourceData.bankDebt;
-        sourcePayload.otherDebt = sourceData.otherDebt;
+        sourcePayload.otherDebts = sourceData.otherDebts; // Save the array
       }
       batch.set(sourceRef, sourcePayload, { merge: true });
 

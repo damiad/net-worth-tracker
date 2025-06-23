@@ -88,14 +88,20 @@ export default function SourcesList({ sources, onEdit, onDelete, accounts }) {
                     </span>
                   </div>
                 )}
-                {source.otherDebt > 0 && (
-                  <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-                    <span>Other Debts</span>
-                    <span className="font-semibold text-red-600 dark:text-red-500">
-                      -{formatCurrency(source.otherDebt)}
-                    </span>
-                  </div>
-                )}
+                {/* Display list of other debts, sorted by amount descending */}
+                {(source.otherDebts || [])
+                  .sort((a, b) => b.amount - a.amount)
+                  .map((debt) => (
+                    <div
+                      key={debt.id}
+                      className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md"
+                    >
+                      <span>{debt.name || "Other Debt"}</span>
+                      <span className="font-semibold text-red-600 dark:text-red-500">
+                        -{formatCurrency(debt.amount)}
+                      </span>
+                    </div>
+                  ))}
               </div>
             )}
 
