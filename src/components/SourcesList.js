@@ -23,6 +23,11 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     [sourceAccounts]
   );
 
+  const loanAccounts = useMemo(
+    () => sourceAccounts.filter((acc) => acc.type === "loan"),
+    [sourceAccounts]
+  );
+
   const debtAccounts = useMemo(
     () => sourceAccounts.filter((acc) => acc.type === "debt"),
     [sourceAccounts]
@@ -32,6 +37,17 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
   const sortedPositiveAccounts = useMemo(
     () => [...positiveAccounts].sort((a, b) => b.balance - a.balance),
     [positiveAccounts]
+  );
+
+  const sortedLoanAccounts = useMemo(
+    () =>
+      [...loanAccounts].sort(
+        (a, b) =>
+          a.baseAmount +
+          a.accumulatedInterest -
+          (b.baseAmount + b.accumulatedInterest)
+      ),
+    [loanAccounts]
   );
 
   const sortedDebtAccounts = useMemo(
@@ -56,19 +72,36 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
     [source.otherDebts]
   );
 
-  const renderDebtDetails = (debt) => (
-    <div className="flex justify-between items-center text-gray-500 dark:text-gray-400 text-[10px] mt-1 px-2">
-      <span>
-        Base: {formatCurrency(debt.baseAmount)} | Int:{" "}
-        {formatCurrency(debt.accumulatedInterest)}
-      </span>
-      <span>
-        {debt.interestRate}% | Upd:{" "}
-        {debt.lastUpdated && debt.lastUpdated.toDate
-          ? debt.lastUpdated.toDate().toLocaleDateString()
-          : "N/A"}
-      </span>
-    </div>
+  const renderLoanOrDebtDetails = (item, isDebt = true) => (
+    <>
+      <div
+        className={`flex justify-between items-center font-semibold ${
+          isDebt
+            ? "text-red-700 dark:text-red-400"
+            : "text-green-700 dark:text-green-400"
+        }`}
+      >
+        <span>{item.name}</span>
+        <span>
+          {isDebt ? "-" : "+"}
+          {formatCurrency(
+            (item.baseAmount || 0) + (item.accumulatedInterest || 0)
+          )}
+        </span>
+      </div>
+      <div className="flex justify-between items-center text-gray-500 dark:text-gray-400 text-[10px] mt-1 px-2">
+        <span>
+          Base: {formatCurrency(item.baseAmount)} | Int:{" "}
+          {formatCurrency(item.accumulatedInterest)}
+        </span>
+        <span>
+          {item.interestRate}% | Upd:{" "}
+          {item.lastUpdated && item.lastUpdated.toDate
+            ? item.lastUpdated.toDate().toLocaleDateString()
+            : "N/A"}
+        </span>
+      </div>
+    </>
   );
 
   return (
@@ -117,37 +150,30 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
 
         {source.type === "property" ? (
           <div className="mt-4 space-y-2 text-xs">
-            <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-              <span>Property Worth</span>
-              <span className="font-semibold text-green-600 dark:text-green-500">
-                {formatCurrency((source.m2 || 0) * (source.pricePerM2 || 0))}
-              </span>
+            <div className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+              <div className="flex justify-between items-center">
+                <span>Property Worth</span>
+                <span className="font-semibold text-green-600 dark:text-green-500">
+                  {formatCurrency((source.m2 || 0) * (source.pricePerM2 || 0))}
+                </span>
+              </div>
             </div>
             {source.bankDebt > 0 && (
-              <div className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
-                <span>Bank Debt</span>
-                <span className="font-semibold text-red-600 dark:text-red-500">
-                  -{formatCurrency(source.bankDebt)}
-                </span>
+              <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
+                <div className="flex justify-between items-center">
+                  <span>Bank Debt</span>
+                  <span className="font-semibold text-red-600 dark:text-red-500">
+                    -{formatCurrency(source.bankDebt)}
+                  </span>
+                </div>
               </div>
             )}
             {sortedOtherDebts.map((debt, index) => (
               <div
                 key={index}
-                className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md"
+                className="p-2 bg-red-50 dark:bg-red-900/20 rounded-md"
               >
-                <div className="flex justify-between items-center font-semibold">
-                  <span className="text-gray-800 dark:text-gray-200">
-                    {debt.name}
-                  </span>
-                  <span className="text-red-600 dark:text-red-500">
-                    -
-                    {formatCurrency(
-                      (debt.baseAmount || 0) + (debt.accumulatedInterest || 0)
-                    )}
-                  </span>
-                </div>
-                {renderDebtDetails(debt)}
+                {renderLoanOrDebtDetails(debt, true)}
               </div>
             ))}
           </div>
@@ -156,7 +182,7 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
             {sortedPositiveAccounts.map((acc) => (
               <div
                 key={acc.id}
-                className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md"
+                className="p-2 bg-green-50 dark:bg-green-900/20 rounded-md"
               >
                 <div className="flex justify-between items-center">
                   <span className="text-green-700 dark:text-green-400 font-medium">
@@ -177,23 +203,20 @@ function SourceCard({ source, accounts, onEdit, onDelete }) {
                 </div>
               </div>
             ))}
+            {sortedLoanAccounts.map((loan, index) => (
+              <div
+                key={loan.id || index}
+                className="p-2 bg-green-50 dark:bg-green-900/20 rounded-md"
+              >
+                {renderLoanOrDebtDetails(loan, false)}
+              </div>
+            ))}
             {sortedDebtAccounts.map((debt, index) => (
               <div
                 key={debt.id || index}
                 className="p-2 bg-red-50 dark:bg-red-900/20 rounded-md"
               >
-                <div className="flex justify-between items-center font-semibold">
-                  <span className="text-red-700 dark:text-red-400">
-                    {debt.name}
-                  </span>
-                  <span className="text-red-700 dark:text-red-400">
-                    -
-                    {formatCurrency(
-                      (debt.baseAmount || 0) + (debt.accumulatedInterest || 0)
-                    )}
-                  </span>
-                </div>
-                {renderDebtDetails(debt)}
+                {renderLoanOrDebtDetails(debt, true)}
               </div>
             ))}
           </div>

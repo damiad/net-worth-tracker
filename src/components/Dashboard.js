@@ -145,6 +145,9 @@ export default function Dashboard({ user, auth }) {
           const positiveAccounts = accounts.filter(
             (acc) => acc.sourceId === source.id && acc.type === "account"
           );
+          const loanAccounts = accounts.filter(
+            (acc) => acc.sourceId === source.id && acc.type === "loan"
+          );
           const debtAccounts = accounts.filter(
             (acc) => acc.sourceId === source.id && acc.type === "debt"
           );
@@ -154,15 +157,25 @@ export default function Dashboard({ user, auth }) {
             return sum + acc.balance * rate;
           }, 0);
 
+          const loansTotal = loanAccounts.reduce((sum, loan) => {
+            return (
+              sum + (loan.baseAmount || 0) + (loan.accumulatedInterest || 0)
+            );
+          }, 0);
+
           const debtTotal = debtAccounts.reduce((sum, debt) => {
             return (
               sum + (debt.baseAmount || 0) + (debt.accumulatedInterest || 0)
             );
           }, 0);
 
-          totalValuePLN = positiveTotal - debtTotal;
+          totalValuePLN = positiveTotal + loansTotal - debtTotal;
 
-          const allSubAccounts = [...positiveAccounts, ...debtAccounts];
+          const allSubAccounts = [
+            ...positiveAccounts,
+            ...loanAccounts,
+            ...debtAccounts,
+          ];
           if (allSubAccounts.length > 0) {
             lastUpdated = allSubAccounts.reduce(
               (latest, acc) =>
@@ -184,7 +197,6 @@ export default function Dashboard({ user, auth }) {
       0
     );
 
-    // --- LIQUID ASSETS CALCULATION ---
     const liquidAssets = sourceValues
       .filter((source) => source.type !== "property")
       .reduce((sum, source) => sum + source.totalValuePLN, 0);
@@ -211,7 +223,6 @@ export default function Dashboard({ user, auth }) {
       return majorAssets;
     })();
 
-    // --- LIQUID ASSETS ADDED TO RETURN OBJECT ---
     return { sourceValues, netWorth, liquidAssets, assetAllocation };
   }, [sources, accounts, exchangeRates]);
 
@@ -244,7 +255,6 @@ export default function Dashboard({ user, auth }) {
     });
 
     const newSnapshotRef = doc(snapshotCollectionRef);
-    // --- LIQUID ASSETS ADDED TO SNAPSHOT PAYLOAD ---
     batch.set(newSnapshotRef, {
       netWorth: processedData.netWorth,
       liquidAssets: processedData.liquidAssets,
@@ -313,6 +323,7 @@ export default function Dashboard({ user, auth }) {
       if (sourceData.type !== "property") {
         const allSubAccounts = [
           ...(sourceData.accounts || []),
+          ...(sourceData.loans || []),
           ...(sourceData.debts || []),
         ];
         const existingSubAccounts = accounts.filter(
@@ -336,7 +347,7 @@ export default function Dashboard({ user, auth }) {
             : doc(collection(db, `${baseDocPath}/accounts`));
 
           let payload;
-          if (subAcc.type === "debt") {
+          if (subAcc.type === "debt" || subAcc.type === "loan") {
             payload = {
               ...subAcc,
               sourceId: finalSourceId,
@@ -429,7 +440,7 @@ export default function Dashboard({ user, auth }) {
           sources={processedData.sourceValues}
           onEdit={handleOpenModal}
           onDelete={handleDeleteSource}
-          accounts={accounts} // Pass unsorted accounts
+          accounts={accounts}
         />
       </main>
       <SourceModal
