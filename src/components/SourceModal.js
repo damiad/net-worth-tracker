@@ -21,11 +21,10 @@ export default function SourceModal({
   // Property State
   const [m2, setM2] = useState(0);
   const [pricePerM2, setPricePerM2] = useState(0);
-  const [bankDebt, setBankDebt] = useState(0);
-  const [otherDebts, setOtherDebts] = useState([]);
-  // --- CHANGE: Added granular currency state for properties ---
   const [pricePerM2Currency, setPricePerM2Currency] = useState("PLN");
+  const [bankDebt, setBankDebt] = useState(0);
   const [bankDebtCurrency, setBankDebtCurrency] = useState("PLN");
+  const [otherDebts, setOtherDebts] = useState([]);
 
   // Financial Account State
   const [positiveAccounts, setPositiveAccounts] = useState([]);
@@ -39,11 +38,10 @@ export default function SourceModal({
       if (source.type === "property") {
         setM2(source.m2 || 0);
         setPricePerM2(source.pricePerM2 || 0);
-        setBankDebt(source.bankDebt || 0);
-        setOtherDebts(source.otherDebts || []);
-        // --- CHANGE: Set granular property currencies when editing ---
         setPricePerM2Currency(source.pricePerM2Currency || "PLN");
+        setBankDebt(source.bankDebt || 0);
         setBankDebtCurrency(source.bankDebtCurrency || "PLN");
+        setOtherDebts(source.otherDebts || []);
       } else {
         const associatedAccounts = accounts.filter(
           (acc) => acc.sourceId === source.id
@@ -59,13 +57,13 @@ export default function SourceModal({
       setType("bank");
       setM2(0);
       setPricePerM2(0);
+      setPricePerM2Currency("PLN");
       setBankDebt(0);
+      setBankDebtCurrency("PLN");
       setOtherDebts([]);
       setPositiveAccounts([]);
       setLoans([]);
       setDebts([]);
-      setPricePerM2Currency("PLN");
-      setBankDebtCurrency("PLN");
     }
   }, [source, isOpen, isEditing, accounts]);
 
@@ -128,11 +126,10 @@ export default function SourceModal({
         ...payload,
         m2,
         pricePerM2,
-        bankDebt,
-        otherDebts,
-        // --- CHANGE: Pass granular property currencies on save ---
         pricePerM2Currency,
+        bankDebt,
         bankDebtCurrency,
+        otherDebts,
       };
     } else {
       payload = {
@@ -151,96 +148,198 @@ export default function SourceModal({
     title,
     list,
     setList,
-    fields,
+    fieldsConfig,
     isInterestBearing = false
-  ) => (
-    <div className="p-4 bg-gray-100 dark:bg-gray-700/50 rounded-lg space-y-4">
-      <h4 className="font-semibold text-gray-800 dark:text-gray-100">
-        {title}
-      </h4>
-      {(list || []).map((item, index) => (
-        <div
-          key={item.id || index}
-          className="grid grid-cols-12 gap-x-2 gap-y-1 items-end border-b dark:border-gray-600 pb-2"
-        >
-          {fields.map((field) => (
-            <div key={field.name} className={field.className}>
-              <label className="text-xs">{field.label}</label>
-              {field.type === "select" ? (
-                <Select
-                  value={item[field.name]}
-                  onChange={(e) =>
-                    handleListChange(
-                      list,
-                      setList,
-                      index,
-                      field.name,
-                      e.target.value
-                    )
-                  }
-                >
-                  {field.options.map((opt) => (
-                    <option key={opt}>{opt}</option>
+  ) => {
+    const isTwoRow = !!fieldsConfig.row1;
+    const allFields = isTwoRow
+      ? [...fieldsConfig.row1, ...fieldsConfig.row2]
+      : fieldsConfig;
+
+    return (
+      <div className="p-4 bg-gray-100 dark:bg-gray-700/50 rounded-lg space-y-4">
+        <h4 className="font-semibold text-gray-800 dark:text-gray-100">
+          {title}
+        </h4>
+        {(list || []).map((item, index) => (
+          <div
+            key={item.id || index}
+            className="border-b dark:border-gray-600 pb-3"
+          >
+            {isTwoRow ? (
+              <>
+                <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
+                  {fieldsConfig.row1.map((field) => (
+                    <div key={field.name} className={field.className}>
+                      <label className="text-xs">{field.label}</label>
+                      <Input
+                        type={field.type}
+                        value={item[field.name]}
+                        onChange={(e) =>
+                          handleListChange(
+                            list,
+                            setList,
+                            index,
+                            field.name,
+                            e.target.value
+                          )
+                        }
+                        placeholder={field.placeholder}
+                      />
+                    </div>
                   ))}
-                </Select>
-              ) : (
-                <Input
-                  type={field.type}
-                  value={item[field.name]}
-                  onChange={(e) =>
-                    handleListChange(
-                      list,
-                      setList,
-                      index,
-                      field.name,
-                      e.target.value
+                </div>
+                <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end mt-2">
+                  {/* --- START: Bug Fix --- */}
+                  {fieldsConfig.row2.map((field) => (
+                    <div key={field.name} className={field.className}>
+                      <label className="text-xs">{field.label}</label>
+                      {field.type === "select" ? (
+                        <Select
+                          value={item[field.name]}
+                          onChange={(e) =>
+                            handleListChange(
+                              list,
+                              setList,
+                              index,
+                              field.name,
+                              e.target.value
+                            )
+                          }
+                        >
+                          {field.options.map((opt) => (
+                            <option key={opt}>{opt}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Input
+                          type={field.type}
+                          value={item[field.name]}
+                          onChange={(e) =>
+                            handleListChange(
+                              list,
+                              setList,
+                              index,
+                              field.name,
+                              e.target.value
+                            )
+                          }
+                          placeholder={field.placeholder}
+                        />
+                      )}
+                    </div>
+                  ))}
+                  {/* --- END: Bug Fix --- */}
+                  <div className="col-span-12 sm:col-span-3 flex justify-end gap-1 self-end">
+                    {isInterestBearing && (
+                      <Button
+                        onClick={() =>
+                          handleUpdateInterest(list, setList, index)
+                        }
+                        variant="ghost"
+                        size="sm"
+                        className="w-8 h-8 p-0"
+                      >
+                        <TrendingUp size={14} />
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => removeListItem(list, setList, index)}
+                      variant="destructive"
+                      size="sm"
+                      className="w-8 h-8 p-0"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-12 gap-x-2 gap-y-1 items-end">
+                {fieldsConfig.map(
+                  (field) =>
+                    field.type !== "hidden" && (
+                      <div key={field.name} className={field.className}>
+                        <label className="text-xs">{field.label}</label>
+                        {field.type === "select" ? (
+                          <Select
+                            value={item[field.name] || ""}
+                            onChange={(e) =>
+                              handleListChange(
+                                list,
+                                setList,
+                                index,
+                                field.name,
+                                e.target.value
+                              )
+                            }
+                          >
+                            {field.options.map((opt) => (
+                              <option key={opt}>{opt}</option>
+                            ))}
+                          </Select>
+                        ) : (
+                          <Input
+                            type={field.type}
+                            value={item[field.name] || ""}
+                            onChange={(e) =>
+                              handleListChange(
+                                list,
+                                setList,
+                                index,
+                                field.name,
+                                e.target.value
+                              )
+                            }
+                            placeholder={field.placeholder}
+                          />
+                        )}
+                      </div>
                     )
-                  }
-                  placeholder={field.placeholder}
-                />
-              )}
-            </div>
-          ))}
-          <div className="col-span-12 sm:col-span-1 flex justify-end gap-1">
-            {isInterestBearing && (
-              <Button
-                onClick={() => handleUpdateInterest(list, setList, index)}
-                variant="ghost"
-                size="sm"
-                className="w-8 h-8 p-0"
-              >
-                <TrendingUp size={14} />
-              </Button>
+                )}
+                <div className="col-span-12 sm:col-span-1 flex justify-end">
+                  {isInterestBearing && (
+                    <Button
+                      onClick={() => handleUpdateInterest(list, setList, index)}
+                      variant="ghost"
+                      size="sm"
+                      className="w-8 h-8 p-0"
+                    >
+                      <TrendingUp size={14} />
+                    </Button>
+                  )}
+                  <Button
+                    onClick={() => removeListItem(list, setList, index)}
+                    variant="destructive"
+                    size="sm"
+                    className="w-8 h-8 p-0"
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              </div>
             )}
-            <Button
-              onClick={() => removeListItem(list, setList, index)}
-              variant="destructive"
-              size="sm"
-              className="w-8 h-8 p-0"
-            >
-              <Trash2 size={14} />
-            </Button>
           </div>
-        </div>
-      ))}
-      <Button
-        onClick={() =>
-          addListItem(
-            setList,
-            fields.reduce(
-              (acc, f) => ({ ...acc, [f.name]: f.defaultValue }),
-              {}
+        ))}
+        <Button
+          onClick={() =>
+            addListItem(
+              setList,
+              allFields.reduce(
+                (acc, f) => ({ ...acc, [f.name]: f.defaultValue }),
+                {}
+              )
             )
-          )
-        }
-        variant="outline"
-        size="sm"
-        className="gap-1"
-      >
-        <PlusCircle size={14} /> Add
-      </Button>
-    </div>
-  );
+          }
+          variant="outline"
+          size="sm"
+          className="gap-1"
+        >
+          <PlusCircle size={14} /> Add
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={title}>
@@ -295,7 +394,6 @@ export default function SourceModal({
                       }
                     />
                   </div>
-                  {/* --- CHANGE: Added currency selector for price --- */}
                   <div>
                     <label className="text-xs">Price Currency</label>
                     <Select
@@ -308,8 +406,16 @@ export default function SourceModal({
                       <option>GBP</option>
                     </Select>
                   </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-gray-100 dark:bg-gray-700/50 rounded-lg space-y-4">
+                <h4 className="font-semibold text-gray-800 dark:text-gray-100">
+                  Bank Debt
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs">Bank Debt</label>
+                    <label className="text-xs">Amount</label>
                     <Input
                       type="number"
                       value={bankDebt}
@@ -318,9 +424,8 @@ export default function SourceModal({
                       }
                     />
                   </div>
-                  {/* --- CHANGE: Added currency selector for bank debt --- */}
                   <div>
-                    <label className="text-xs">Bank Debt Currency</label>
+                    <label className="text-xs">Currency</label>
                     <Select
                       value={bankDebtCurrency}
                       onChange={(e) => setBankDebtCurrency(e.target.value)}
@@ -333,49 +438,53 @@ export default function SourceModal({
                   </div>
                 </div>
               </div>
-              {/* --- CHANGE: Added currency selector for other debts --- */}
+
               {renderDynamicList(
                 "Other Debts",
                 otherDebts,
                 setOtherDebts,
-                [
-                  {
-                    name: "name",
-                    label: "Name",
-                    type: "text",
-                    defaultValue: "Unnamed Debt",
-                    className: "col-span-12 sm:col-span-3",
-                  },
-                  {
-                    name: "baseAmount",
-                    label: "Base Amt",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "accumulatedInterest",
-                    label: "Acc. Int",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "interestRate",
-                    label: "Rate %",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "currency",
-                    label: "Curr",
-                    type: "select",
-                    defaultValue: "PLN",
-                    options: ["PLN", "USD", "EUR", "GBP"],
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                ],
+                {
+                  row1: [
+                    {
+                      name: "name",
+                      label: "Name",
+                      type: "text",
+                      defaultValue: "Unnamed Debt",
+                      className: "col-span-12 sm:col-span-7",
+                    },
+                    {
+                      name: "baseAmount",
+                      label: "Base Amount",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-12 sm:col-span-5",
+                    },
+                  ],
+                  row2: [
+                    {
+                      name: "accumulatedInterest",
+                      label: "Acc. Interest",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-4",
+                    },
+                    {
+                      name: "interestRate",
+                      label: "Rate %",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-4",
+                    },
+                    {
+                      name: "currency",
+                      label: "Currency",
+                      type: "select",
+                      defaultValue: "PLN",
+                      options: ["PLN", "USD", "EUR", "GBP"],
+                      className: "col-span-4",
+                    },
+                  ],
+                },
                 true
               )}
             </div>
@@ -425,14 +534,14 @@ export default function SourceModal({
                   },
                   {
                     name: "baseAmount",
-                    label: "Base Amt",
+                    label: "Base Amount",
                     type: "number",
                     defaultValue: 0,
                     className: "col-span-6 sm:col-span-2",
                   },
                   {
                     name: "accumulatedInterest",
-                    label: "Acc. Int",
+                    label: "Acc. Interest",
                     type: "number",
                     defaultValue: 0,
                     className: "col-span-6 sm:col-span-2",
@@ -446,7 +555,7 @@ export default function SourceModal({
                   },
                   {
                     name: "currency",
-                    label: "Curr",
+                    label: "Currency",
                     type: "select",
                     defaultValue: "PLN",
                     options: ["PLN", "USD", "EUR", "GBP"],
@@ -470,14 +579,14 @@ export default function SourceModal({
                   },
                   {
                     name: "baseAmount",
-                    label: "Base Amt",
+                    label: "Base Amount",
                     type: "number",
                     defaultValue: 0,
                     className: "col-span-6 sm:col-span-2",
                   },
                   {
                     name: "accumulatedInterest",
-                    label: "Acc. Int",
+                    label: "Acc. Interest",
                     type: "number",
                     defaultValue: 0,
                     className: "col-span-6 sm:col-span-2",
@@ -491,7 +600,7 @@ export default function SourceModal({
                   },
                   {
                     name: "currency",
-                    label: "Curr",
+                    label: "Currency",
                     type: "select",
                     defaultValue: "PLN",
                     options: ["PLN", "USD", "EUR", "GBP"],
