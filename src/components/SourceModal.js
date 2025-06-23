@@ -102,8 +102,13 @@ export default function SourceModal({
       : new Date();
     const now = new Date();
 
-    const daysDiff =
-      (now.getTime() - lastUpdateDate.getTime()) / (1000 * 3600 * 24);
+    // --- CHANGE: Calculate difference in whole days ---
+    const daysDiff = Math.floor(
+      (now.getTime() - lastUpdateDate.getTime()) / (1000 * 3600 * 24)
+    );
+
+    if (daysDiff <= 0) return; // No interest to add for same-day updates
+
     const yearlyRate = (item.interestRate || 0) / 100;
     const interest = (item.baseAmount || 0) * yearlyRate * (daysDiff / 365);
 
@@ -174,7 +179,7 @@ export default function SourceModal({
                       <label className="text-xs">{field.label}</label>
                       <Input
                         type={field.type}
-                        value={item[field.name]}
+                        value={item[field.name] || ""}
                         onChange={(e) =>
                           handleListChange(
                             list,
@@ -190,13 +195,12 @@ export default function SourceModal({
                   ))}
                 </div>
                 <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end mt-2">
-                  {/* --- START: Bug Fix --- */}
                   {fieldsConfig.row2.map((field) => (
                     <div key={field.name} className={field.className}>
                       <label className="text-xs">{field.label}</label>
                       {field.type === "select" ? (
                         <Select
-                          value={item[field.name]}
+                          value={item[field.name] || field.defaultValue}
                           onChange={(e) =>
                             handleListChange(
                               list,
@@ -214,7 +218,7 @@ export default function SourceModal({
                       ) : (
                         <Input
                           type={field.type}
-                          value={item[field.name]}
+                          value={item[field.name] || ""}
                           onChange={(e) =>
                             handleListChange(
                               list,
@@ -229,14 +233,14 @@ export default function SourceModal({
                       )}
                     </div>
                   ))}
-                  {/* --- END: Bug Fix --- */}
                   <div className="col-span-12 sm:col-span-3 flex justify-end gap-1 self-end">
+                    {/* --- CHANGE: Updated button variant to blue --- */}
                     {isInterestBearing && (
                       <Button
                         onClick={() =>
                           handleUpdateInterest(list, setList, index)
                         }
-                        variant="ghost"
+                        variant="default"
                         size="sm"
                         className="w-8 h-8 p-0"
                       >
@@ -301,7 +305,7 @@ export default function SourceModal({
                   {isInterestBearing && (
                     <Button
                       onClick={() => handleUpdateInterest(list, setList, index)}
-                      variant="ghost"
+                      variant="default"
                       size="sm"
                       className="w-8 h-8 p-0"
                     >
@@ -520,94 +524,101 @@ export default function SourceModal({
                   { name: "type", type: "hidden", defaultValue: "account" },
                 ]
               )}
+              {/* --- CHANGE: Updated to two-row layout --- */}
               {renderDynamicList(
                 "Associated Loans (Money you loaned out)",
                 loans,
                 setLoans,
-                [
-                  {
-                    name: "name",
-                    label: "Name",
-                    type: "text",
-                    defaultValue: "Unnamed Loan",
-                    className: "col-span-12 sm:col-span-3",
-                  },
-                  {
-                    name: "baseAmount",
-                    label: "Base Amount",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "accumulatedInterest",
-                    label: "Acc. Interest",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "interestRate",
-                    label: "Rate %",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "currency",
-                    label: "Currency",
-                    type: "select",
-                    defaultValue: "PLN",
-                    options: ["PLN", "USD", "EUR", "GBP"],
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  { name: "type", type: "hidden", defaultValue: "loan" },
-                ],
+                {
+                  row1: [
+                    {
+                      name: "name",
+                      label: "Name",
+                      type: "text",
+                      defaultValue: "Unnamed Loan",
+                      className: "col-span-12 sm:col-span-7",
+                    },
+                    {
+                      name: "baseAmount",
+                      label: "Base Amount",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-12 sm:col-span-5",
+                    },
+                  ],
+                  row2: [
+                    {
+                      name: "accumulatedInterest",
+                      label: "Acc. Interest",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-4",
+                    },
+                    {
+                      name: "interestRate",
+                      label: "Rate %",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-4",
+                    },
+                    {
+                      name: "currency",
+                      label: "Currency",
+                      type: "select",
+                      defaultValue: "PLN",
+                      options: ["PLN", "USD", "EUR", "GBP"],
+                      className: "col-span-4",
+                    },
+                  ],
+                },
                 true
               )}
               {renderDynamicList(
                 "Associated Debts",
                 debts,
                 setDebts,
-                [
-                  {
-                    name: "name",
-                    label: "Name",
-                    type: "text",
-                    defaultValue: "Unnamed Debt",
-                    className: "col-span-12 sm:col-span-3",
-                  },
-                  {
-                    name: "baseAmount",
-                    label: "Base Amount",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "accumulatedInterest",
-                    label: "Acc. Interest",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "interestRate",
-                    label: "Rate %",
-                    type: "number",
-                    defaultValue: 0,
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  {
-                    name: "currency",
-                    label: "Currency",
-                    type: "select",
-                    defaultValue: "PLN",
-                    options: ["PLN", "USD", "EUR", "GBP"],
-                    className: "col-span-6 sm:col-span-2",
-                  },
-                  { name: "type", type: "hidden", defaultValue: "debt" },
-                ],
+                {
+                  row1: [
+                    {
+                      name: "name",
+                      label: "Name",
+                      type: "text",
+                      defaultValue: "Unnamed Debt",
+                      className: "col-span-12 sm:col-span-7",
+                    },
+                    {
+                      name: "baseAmount",
+                      label: "Base Amount",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-12 sm:col-span-5",
+                    },
+                  ],
+                  row2: [
+                    {
+                      name: "accumulatedInterest",
+                      label: "Acc. Interest",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-4",
+                    },
+                    {
+                      name: "interestRate",
+                      label: "Rate %",
+                      type: "number",
+                      defaultValue: 0,
+                      className: "col-span-4",
+                    },
+                    {
+                      name: "currency",
+                      label: "Currency",
+                      type: "select",
+                      defaultValue: "PLN",
+                      options: ["PLN", "USD", "EUR", "GBP"],
+                      className: "col-span-4",
+                    },
+                  ],
+                },
                 true
               )}
             </div>
