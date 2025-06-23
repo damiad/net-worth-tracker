@@ -1,15 +1,15 @@
 {
   "files": {
-    "main.css": "/net-worth-tracker/static/css/main.f70784db.css",
-    "main.js": "/net-worth-tracker/static/js/main.1a67ce13.js",
+    "main.css": "/net-worth-tracker/static/css/main.5eb4c184.css",
+    "main.js": "/net-worth-tracker/static/js/main.7d141bab.js",
     "static/js/453.bdb838b0.chunk.js": "/net-worth-tracker/static/js/453.bdb838b0.chunk.js",
     "index.html": "/net-worth-tracker/index.html",
-    "main.f70784db.css.map": "/net-worth-tracker/static/css/main.f70784db.css.map",
-    "main.1a67ce13.js.map": "/net-worth-tracker/static/js/main.1a67ce13.js.map",
+    "main.5eb4c184.css.map": "/net-worth-tracker/static/css/main.5eb4c184.css.map",
+    "main.7d141bab.js.map": "/net-worth-tracker/static/js/main.7d141bab.js.map",
     "453.bdb838b0.chunk.js.map": "/net-worth-tracker/static/js/453.bdb838b0.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.f70784db.css",
-    "static/js/main.1a67ce13.js"
+    "static/css/main.5eb4c184.css",
+    "static/js/main.7d141bab.js"
   ]
 }
