@@ -88,18 +88,41 @@ export default function SourcesList({ sources, onEdit, onDelete, accounts }) {
                     </span>
                   </div>
                 )}
-                {/* Display list of other debts, sorted by amount descending */}
+
                 {(source.otherDebts || [])
-                  .sort((a, b) => b.amount - a.amount)
+                  .sort(
+                    (a, b) =>
+                      b.baseAmount +
+                      b.accumulatedInterest -
+                      (a.baseAmount + a.accumulatedInterest)
+                  )
                   .map((debt) => (
                     <div
                       key={debt.id}
-                      className="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md"
+                      className="p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md"
                     >
-                      <span>{debt.name || "Other Debt"}</span>
-                      <span className="font-semibold text-red-600 dark:text-red-500">
-                        -{formatCurrency(debt.amount)}
-                      </span>
+                      <div className="flex justify-between items-center font-semibold">
+                        <span>{debt.name || "Other Debt"}</span>
+                        <span className="text-red-600 dark:text-red-500">
+                          -
+                          {formatCurrency(
+                            (debt.baseAmount || 0) +
+                              (debt.accumulatedInterest || 0)
+                          )}
+                        </span>
+                      </div>
+                      <div className="pl-2 mt-1 space-y-1 text-gray-500 dark:text-gray-400">
+                        <div className="flex justify-between text-xs">
+                          <span>Base Loan</span>
+                          <span>{formatCurrency(debt.baseAmount)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span>Accum. Interest</span>
+                          <span>
+                            {formatCurrency(debt.accumulatedInterest)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   ))}
               </div>

@@ -139,7 +139,8 @@ export default function Dashboard({ user, auth }) {
         if (source.type === "property") {
           const propertyValue = (source.m2 || 0) * (source.pricePerM2 || 0);
           const otherDebtsTotal = (source.otherDebts || []).reduce(
-            (sum, debt) => sum + (debt.amount || 0),
+            (sum, debt) =>
+              sum + (debt.baseAmount || 0) + (debt.accumulatedInterest || 0),
             0
           );
           const totalDebt = (source.bankDebt || 0) + otherDebtsTotal;
@@ -202,35 +203,28 @@ export default function Dashboard({ user, auth }) {
     return { sourceValues, netWorth, liquidAssets, assetAllocation };
   }, [sources, accounts, exchangeRates]);
 
-  // Take a daily snapshot of net worth
   const takeSnapshot = useCallback(async () => {
     if (!db || !user || processedData.netWorth === null) return;
-
     const userId = user.uid;
     const snapshotCollectionRef = collection(
       db,
       `artifacts/${appId}/users/${userId}/netWorthSnapshots`
     );
-
     const today = new Date();
     const startOfDay = new Date(
       today.getFullYear(),
       today.getMonth(),
       today.getDate()
     );
-
     const q = query(
       snapshotCollectionRef,
       where("timestamp", ">=", startOfDay)
     );
     const snapshotsToDelete = await getDocs(q);
-
     const batch = writeBatch(db);
-
     snapshotsToDelete.forEach((doc) => {
       batch.delete(doc.ref);
     });
-
     const newSnapshotRef = doc(snapshotCollectionRef);
     batch.set(newSnapshotRef, {
       netWorth: processedData.netWorth,
@@ -238,15 +232,13 @@ export default function Dashboard({ user, auth }) {
       timestamp: Timestamp.now(),
       assetAllocation: processedData.assetAllocation,
     });
-
     await batch.commit();
   }, [db, user, processedData]);
 
-  // This effect will run after a save/delete to ensure the snapshot is taken with the latest data.
   useEffect(() => {
     if (isSnapshotPending && processedData.netWorth !== null) {
       takeSnapshot();
-      setIsSnapshotPending(false); // Reset the flag
+      setIsSnapshotPending(false);
     }
   }, [isSnapshotPending, processedData, takeSnapshot]);
 
@@ -283,7 +275,7 @@ export default function Dashboard({ user, auth }) {
         sourcePayload.m2 = sourceData.m2;
         sourcePayload.pricePerM2 = sourceData.pricePerM2;
         sourcePayload.bankDebt = sourceData.bankDebt;
-        sourcePayload.otherDebts = sourceData.otherDebts; // Save the array
+        sourcePayload.otherDebts = sourceData.otherDebts;
       }
       batch.set(sourceRef, sourcePayload, { merge: true });
 
@@ -294,7 +286,6 @@ export default function Dashboard({ user, auth }) {
         const submittedAccountIds = sourceData.accounts
           .map((a) => a.id)
           .filter(Boolean);
-
         existingAccounts.forEach((existingAcc) => {
           if (!submittedAccountIds.includes(existingAcc.id)) {
             const accToDeleteRef = doc(
@@ -305,7 +296,6 @@ export default function Dashboard({ user, auth }) {
             batch.delete(accToDeleteRef);
           }
         });
-
         sourceData.accounts.forEach((acc) => {
           const finalSourceId = sourceRef.id;
           const accountRef = acc.id
@@ -321,34 +311,26 @@ export default function Dashboard({ user, auth }) {
 
       await batch.commit();
       handleCloseModal();
-      setIsSnapshotPending(true); // Request a snapshot after state updates
+      setIsSnapshotPending(true);
     } catch (e) {
       console.error("Error saving source:", e);
       const errorMessage =
         e.code === "permission-denied"
-          ? "Permission denied. Please check your Firestore security rules."
-          : e.message || "An unknown error occurred while saving your data.";
+          ? "Permission denied. Check Firestore security rules."
+          : e.message || "An unknown error occurred.";
       setError(`Failed to save: ${errorMessage}`);
     }
   };
 
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this source and all its accounts? This cannot be undone."
-      )
-    )
-      return;
-
+    if (!window.confirm("Are you sure? This cannot be undone.")) return;
     const userId = user.uid;
     const baseDocPath = `artifacts/${appId}/users/${userId}`;
     const batch = writeBatch(db);
-
     try {
       const sourceRef = doc(db, `${baseDocPath}/sources`, sourceId);
       batch.delete(sourceRef);
-
       const associatedAccounts = accounts.filter(
         (acc) => acc.sourceId === sourceId
       );
@@ -356,15 +338,14 @@ export default function Dashboard({ user, auth }) {
         const accountRef = doc(db, `${baseDocPath}/accounts`, acc.id);
         batch.delete(accountRef);
       });
-
       await batch.commit();
-      setIsSnapshotPending(true); // Request a snapshot after state updates
+      setIsSnapshotPending(true);
     } catch (e) {
       console.error("Error deleting source:", e);
       const errorMessage =
         e.code === "permission-denied"
-          ? "Permission denied. Please check your Firestore security rules."
-          : e.message || "An unknown error occurred while deleting the source.";
+          ? "Permission denied. Check Firestore security rules."
+          : e.message || "An unknown error occurred.";
       setError(`Failed to delete: ${errorMessage}`);
     }
   };
@@ -386,10 +367,12 @@ export default function Dashboard({ user, auth }) {
         <DashboardMetrics data={processedData} snapshots={snapshots} />
         <div className="flex justify-between items-center my-6">
           <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-            Financial Sources
+            {" "}
+            Financial Sources{" "}
           </h2>
           <Button onClick={() => handleOpenModal()} className="gap-2">
-            <PlusCircle size={16} /> Add Source
+            {" "}
+            <PlusCircle size={16} /> Add Source{" "}
           </Button>
         </div>
         <SourcesList

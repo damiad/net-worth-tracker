@@ -3,7 +3,8 @@ import { Dialog } from "./ui/Dialog";
 import { Button } from "./ui/Button";
 import { Input } from "./ui/Input";
 import { Select } from "./ui/Select";
-import { Trash2 } from "lucide-react";
+import { Trash2, RefreshCw } from "lucide-react";
+import { Timestamp } from "firebase/firestore";
 
 export default function SourceModal({
   isOpen,
@@ -16,17 +17,22 @@ export default function SourceModal({
   const [name, setName] = useState("");
   const [type, setType] = useState("bank");
 
-  // Bank/Investment accounts state
   const [sourceAccounts, setSourceAccounts] = useState([
     { id: `new_${Date.now()}`, name: "", currency: "PLN", balance: 0 },
   ]);
 
-  // Property state
   const [m2, setM2] = useState(0);
   const [pricePerM2, setPricePerM2] = useState(0);
   const [bankDebt, setBankDebt] = useState(0);
   const [otherDebts, setOtherDebts] = useState([
-    { id: `new_${Date.now()}`, name: "", amount: 0 },
+    {
+      id: `new_${Date.now()}`,
+      name: "",
+      baseAmount: 0,
+      accumulatedInterest: 0,
+      rate: 0,
+      lastInterestUpdate: null,
+    },
   ]);
 
   useEffect(() => {
@@ -40,7 +46,16 @@ export default function SourceModal({
         setOtherDebts(
           source.otherDebts && source.otherDebts.length > 0
             ? source.otherDebts
-            : [{ id: `new_${Date.now()}`, name: "", amount: 0 }]
+            : [
+                {
+                  id: `new_${Date.now()}`,
+                  name: "",
+                  baseAmount: 0,
+                  accumulatedInterest: 0,
+                  rate: 0,
+                  lastInterestUpdate: null,
+                },
+              ]
         );
       } else {
         const existingAccounts = accounts.filter(
@@ -60,7 +75,6 @@ export default function SourceModal({
         );
       }
     } else {
-      // Reset form for new source
       setName("");
       setType("bank");
       setSourceAccounts([
@@ -69,7 +83,16 @@ export default function SourceModal({
       setM2(0);
       setPricePerM2(0);
       setBankDebt(0);
-      setOtherDebts([{ id: `new_${Date.now()}`, name: "", amount: 0 }]);
+      setOtherDebts([
+        {
+          id: `new_${Date.now()}`,
+          name: "",
+          baseAmount: 0,
+          accumulatedInterest: 0,
+          rate: 0,
+          lastInterestUpdate: null,
+        },
+      ]);
     }
   }, [source, isOpen, accounts, isEditing]);
 
@@ -88,43 +111,85 @@ export default function SourceModal({
   };
 
   const removeAccount = (id) => {
-    const updatedAccounts = sourceAccounts.filter((acc) => acc.id !== id);
-    setSourceAccounts(updatedAccounts);
+    setSourceAccounts(sourceAccounts.filter((acc) => acc.id !== id));
   };
 
   const handleDebtChange = (index, field, value) => {
     const updatedDebts = [...otherDebts];
+    const numValue = parseFloat(value) || 0;
     updatedDebts[index][field] =
-      field === "amount" ? parseFloat(value) || 0 : value;
+      field === "baseAmount" ||
+      field === "accumulatedInterest" ||
+      field === "rate"
+        ? numValue
+        : value;
+    setOtherDebts(updatedDebts);
+  };
+
+  const handleInterestUpdate = (index) => {
+    const updatedDebts = [...otherDebts];
+    const debt = updatedDebts[index];
+
+    if (
+      !debt.rate ||
+      debt.rate <= 0 ||
+      !debt.baseAmount ||
+      debt.baseAmount <= 0
+    )
+      return;
+
+    const lastUpdate = debt.lastInterestUpdate?.toDate() || new Date();
+    const now = new Date();
+    const daysPassed =
+      (now.getTime() - lastUpdate.getTime()) / (1000 * 3600 * 24);
+    const dailyRate = debt.rate / 100 / 365;
+
+    const newInterest = debt.baseAmount * dailyRate * daysPassed;
+    const totalAccumulated = (debt.accumulatedInterest || 0) + newInterest;
+
+    updatedDebts[index].accumulatedInterest = parseFloat(
+      totalAccumulated.toFixed(2)
+    );
     setOtherDebts(updatedDebts);
   };
 
   const addDebt = () => {
     setOtherDebts([
       ...otherDebts,
-      { id: `new_${Date.now()}`, name: "", amount: 0 },
+      {
+        id: `new_${Date.now()}`,
+        name: "",
+        baseAmount: 0,
+        accumulatedInterest: 0,
+        rate: 0,
+        lastInterestUpdate: null,
+      },
     ]);
   };
 
   const removeDebt = (id) => {
-    const updatedDebts = otherDebts.filter((debt) => debt.id !== id);
-    setOtherDebts(updatedDebts);
+    setOtherDebts(otherDebts.filter((debt) => debt.id !== id));
   };
 
   const handleSaveClick = () => {
-    let payload = {
-      id: source ? source.id : null,
-      name,
-      type,
-    };
+    let payload = { id: source ? source.id : null, name, type };
 
     if (type === "property") {
+      const finalDebts = otherDebts
+        .map((debt) => {
+          return {
+            ...debt,
+            lastInterestUpdate: debt.lastInterestUpdate || Timestamp.now(),
+          };
+        })
+        .filter((d) => d.baseAmount > 0);
+
       payload = {
         ...payload,
         m2,
         pricePerM2,
         bankDebt,
-        otherDebts: otherDebts.filter((d) => d.amount > 0),
+        otherDebts: finalDebts,
       };
     } else {
       payload = { ...payload, accounts: sourceAccounts };
@@ -137,7 +202,8 @@ export default function SourceModal({
 
   return (
     <Dialog isOpen={isOpen} onClose={onClose} title={title}>
-      <div className="space-y-4">
+      {/* THIS WRAPPER IS NOW SCROLLABLE */}
+      <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1 pr-4">
         <div>
           <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {" "}
@@ -172,33 +238,30 @@ export default function SourceModal({
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                {" "}
-                <label className="text-xs">Area (m²)</label>{" "}
+                <label className="text-xs">Area (m²)</label>
                 <Input
                   type="number"
                   value={m2}
                   onChange={(e) => setM2(parseFloat(e.target.value) || 0)}
-                />{" "}
+                />
               </div>
               <div>
-                {" "}
-                <label className="text-xs">Price per m² (PLN)</label>{" "}
+                <label className="text-xs">Price per m² (PLN)</label>
                 <Input
                   type="number"
                   value={pricePerM2}
                   onChange={(e) =>
                     setPricePerM2(parseFloat(e.target.value) || 0)
                   }
-                />{" "}
+                />
               </div>
               <div>
-                {" "}
-                <label className="text-xs">Bank Debt (PLN)</label>{" "}
+                <label className="text-xs">Bank Debt (PLN)</label>
                 <Input
                   type="number"
                   value={bankDebt}
                   onChange={(e) => setBankDebt(parseFloat(e.target.value) || 0)}
-                />{" "}
+                />
               </div>
             </div>
 
@@ -206,44 +269,80 @@ export default function SourceModal({
               {" "}
               Other Debts{" "}
             </h4>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {otherDebts.map((debt, index) => (
                 <div
                   key={debt.id}
-                  className="grid grid-cols-12 gap-2 items-end"
+                  className="p-3 bg-white dark:bg-gray-800 rounded-md border dark:border-gray-600 space-y-2"
                 >
-                  <div className="col-span-6">
-                    <label className="text-xs">Debt Name</label>
+                  <div className="flex justify-between items-center">
                     <Input
+                      className="text-sm font-semibold !border-0 !p-0"
                       value={debt.name}
                       onChange={(e) =>
                         handleDebtChange(index, "name", e.target.value)
                       }
-                      placeholder="e.g., Parents loan"
+                      placeholder="Debt Name (e.g., From Parents)"
                     />
+                    <Button
+                      onClick={() => removeDebt(debt.id)}
+                      variant="ghost"
+                      size="sm"
+                      className="w-7 h-7 p-0 text-red-500"
+                    >
+                      {" "}
+                      <Trash2 size={14} />{" "}
+                    </Button>
                   </div>
-                  <div className="col-span-5">
-                    <label className="text-xs">Amount (PLN)</label>
-                    <Input
-                      type="number"
-                      value={debt.amount}
-                      onChange={(e) =>
-                        handleDebtChange(index, "amount", e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    {otherDebts.length > 1 && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+                    <div className="md:col-span-1">
+                      {" "}
+                      <label className="text-xs">Base Loan</label>{" "}
+                      <Input
+                        type="number"
+                        value={debt.baseAmount}
+                        onChange={(e) =>
+                          handleDebtChange(index, "baseAmount", e.target.value)
+                        }
+                      />{" "}
+                    </div>
+                    <div className="md:col-span-1">
+                      {" "}
+                      <label className="text-xs">Interest Rate (%)</label>{" "}
+                      <Input
+                        type="number"
+                        value={debt.rate}
+                        onChange={(e) =>
+                          handleDebtChange(index, "rate", e.target.value)
+                        }
+                      />{" "}
+                    </div>
+                    <div className="md:col-span-1">
+                      {" "}
+                      <label className="text-xs">Accum. Interest</label>{" "}
+                      <Input
+                        type="number"
+                        value={debt.accumulatedInterest}
+                        onChange={(e) =>
+                          handleDebtChange(
+                            index,
+                            "accumulatedInterest",
+                            e.target.value
+                          )
+                        }
+                      />{" "}
+                    </div>
+                    <div className="md:col-span-1">
+                      {" "}
                       <Button
-                        onClick={() => removeDebt(debt.id)}
-                        variant="destructive"
+                        onClick={() => handleInterestUpdate(index)}
+                        variant="outline"
                         size="sm"
-                        className="w-8 h-8 p-0"
+                        className="w-full gap-1.5"
                       >
-                        {" "}
-                        <Trash2 size={14} />{" "}
-                      </Button>
-                    )}
+                        <RefreshCw size={12} /> Update
+                      </Button>{" "}
+                    </div>
                   </div>
                 </div>
               ))}
