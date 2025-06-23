@@ -1,43 +1,14 @@
 import React, { useMemo } from "react";
 import { DollarSign, Home, Edit, Trash2 } from "lucide-react";
-
-const Card = ({ children, className = "" }) => (
-  <div
-    className={`border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-50 shadow-sm rounded-lg ${className}`}
-  >
-    {children}
-  </div>
-);
-
-const CardHeader = ({ children, className = "" }) => (
-  // Removed opinionated flex styles to let the consumer control the layout.
-  <div className={`p-4 md:p-6 ${className}`}>{children}</div>
-);
-
-const CardTitle = ({ children, className = "" }) => (
-  <h3
-    className={`text-lg font-semibold leading-none tracking-tight ${className}`}
-  >
-    {children}
-  </h3>
-);
-
-const CardContent = ({ children, className = "" }) => (
-  <div className={`p-4 md:p-6 pt-0 ${className}`}>{children}</div>
-);
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 
 const Button = ({ onClick, children, variant, size, className }) => {
-  // A simplified button component to replicate the necessary 'ghost' variant style.
   const baseStyle =
     "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-400 disabled:pointer-events-none disabled:opacity-50";
-
-  // Specific styles for the 'ghost' variant used in this component
   const ghostStyle = "hover:bg-gray-100 dark:hover:bg-gray-700";
-
   const combinedClassName = `${baseStyle} ${
     variant === "ghost" ? ghostStyle : ""
   } ${className || ""}`;
-
   return (
     <button onClick={onClick} className={combinedClassName}>
       {children}
@@ -45,48 +16,32 @@ const Button = ({ onClick, children, variant, size, className }) => {
   );
 };
 
-/**
- * A card component that displays detailed information about a single financial source.
- * It now converts the main total value to a selected display currency.
- * @param {object} props - The component's props.
- * @param {object} props.source - The source data object.
- * @param {Array<object>} props.accounts - The list of all accounts.
- * @param {function} props.onEdit - Callback for editing the source.
- * @param {function} props.onDelete - Callback for deleting the source.
- * @param {string} props.selectedCurrency - The currency to display the main total in (e.g., 'USD', 'EUR').
- * @param {object} props.exchangeRates - An object with exchange rates against PLN (e.g., { USD: 4.0, EUR: 4.3 }).
- */
 function SourceCard({
   source,
   accounts,
   onEdit,
   onDelete,
-  selectedCurrency,
-  exchangeRates,
+  displayCurrency,
+  plnRates,
 }) {
   // Formatter for displaying the main card total in the user-selected currency.
-  // It converts the base PLN value using the provided exchange rates.
   const formatInSelectedCurrency = (valuePLN) => {
-    // Default to PLN if no currency is selected, rates are missing, or PLN is the selected currency
     if (
-      !selectedCurrency ||
-      !exchangeRates ||
-      !exchangeRates[selectedCurrency] ||
-      selectedCurrency === "PLN"
+      !displayCurrency ||
+      !plnRates ||
+      !plnRates[displayCurrency] ||
+      displayCurrency === "PLN"
     ) {
       return new Intl.NumberFormat("pl-PL", {
         style: "currency",
         currency: "PLN",
       }).format(valuePLN || 0);
     }
-
-    const rate = exchangeRates[selectedCurrency];
+    const rate = plnRates[displayCurrency];
     const convertedValue = (valuePLN || 0) / rate;
-
-    // Use the appropriate locale/formatting for the selected currency
     return new Intl.NumberFormat("pl-PL", {
       style: "currency",
-      currency: selectedCurrency,
+      currency: displayCurrency,
     }).format(convertedValue);
   };
 
@@ -101,28 +56,24 @@ function SourceCard({
     () => accounts.filter((acc) => acc.sourceId === source.id),
     [accounts, source.id]
   );
-
   const positiveAccounts = useMemo(
     () => sourceAccounts.filter((acc) => acc.type === "account"),
     [sourceAccounts]
   );
-
   const loanAccounts = useMemo(
     () => sourceAccounts.filter((acc) => acc.type === "loan"),
     [sourceAccounts]
   );
-
   const debtAccounts = useMemo(
     () => sourceAccounts.filter((acc) => acc.type === "debt"),
     [sourceAccounts]
   );
 
-  // Sorting logic remains the same as it operates on the underlying data.
+  // Sorting logic remains the same
   const sortedPositiveAccounts = useMemo(
     () => [...positiveAccounts].sort((a, b) => b.balance - a.balance),
     [positiveAccounts]
   );
-
   const sortedLoanAccounts = useMemo(
     () =>
       [...loanAccounts].sort(
@@ -133,7 +84,6 @@ function SourceCard({
       ),
     [loanAccounts]
   );
-
   const sortedDebtAccounts = useMemo(
     () =>
       [...debtAccounts].sort(
@@ -144,7 +94,6 @@ function SourceCard({
       ),
     [debtAccounts]
   );
-
   const sortedOtherDebts = useMemo(
     () =>
       [...(source.otherDebts || [])].sort(
@@ -156,7 +105,6 @@ function SourceCard({
     [source.otherDebts]
   );
 
-  // Helper function to render loan or debt details
   const renderLoanOrDebtDetails = (item, isDebt = true) => (
     <>
       <div
@@ -168,7 +116,7 @@ function SourceCard({
       >
         <span>{item.name}</span>
         <span>
-          {isDebt ? "-" : "+"}
+          {isDebt ? "-" : "+"}{" "}
           {formatMoney(
             (item.baseAmount || 0) + (item.accumulatedInterest || 0),
             item.currency || "PLN"
@@ -189,32 +137,6 @@ function SourceCard({
       </div>
     </>
   );
-
-  // --- CHANGE START ---
-  // This component will now visually indicate if currency conversion failed due to missing props.
-  const DisplayTotal = () => {
-    const isPLNFallback =
-      !selectedCurrency ||
-      !exchangeRates ||
-      !exchangeRates[selectedCurrency] ||
-      selectedCurrency === "PLN";
-    const hasConversionFailed =
-      selectedCurrency && selectedCurrency !== "PLN" && isPLNFallback;
-
-    return (
-      <div>
-        <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-          {formatInSelectedCurrency(source.totalValuePLN)}
-        </p>
-        {hasConversionFailed && (
-          <p className="text-xs text-yellow-500 dark:text-yellow-400 mt-1">
-            (Conversion to {selectedCurrency} unavailable)
-          </p>
-        )}
-      </div>
-    );
-  };
-  // --- CHANGE END ---
 
   return (
     <Card>
@@ -256,7 +178,9 @@ function SourceCard({
         </div>
       </CardHeader>
       <CardContent>
-        <DisplayTotal />
+        <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+          {formatInSelectedCurrency(source.totalValuePLN)}
+        </p>
 
         {source.type === "property" ? (
           <div className="mt-4 space-y-2 text-xs">
@@ -276,7 +200,7 @@ function SourceCard({
                 <div className="flex justify-between items-center">
                   <span>Bank Debt</span>
                   <span className="font-semibold text-red-600 dark:text-red-500">
-                    -
+                    -{" "}
                     {formatMoney(
                       source.bankDebt,
                       source.bankDebtCurrency || "PLN"
@@ -343,24 +267,14 @@ function SourceCard({
   );
 }
 
-/**
- * The main component that renders a grid of SourceCard components.
- * It passes down currency selection props to each card.
- * @param {object} props - The component's props.
- * @param {Array<object>} props.sources - The list of all sources.
- * @param {function} props.onEdit - Callback for editing.
- * @param {function} props.onDelete - Callback for deleting.
- * @param {Array<object>} props.accounts - The list of all accounts.
- * @param {string} props.selectedCurrency - The currency to display totals in.
- * @param {object} props.exchangeRates - The exchange rates for conversion from PLN.
- */
+// --- FIX: Changed prop names to match what is being passed from Dashboard.js ---
 export default function SourcesList({
   sources,
   onEdit,
   onDelete,
   accounts,
-  selectedCurrency,
-  exchangeRates,
+  displayCurrency,
+  plnRates,
 }) {
   if (!sources || sources.length === 0) {
     return (
@@ -386,8 +300,8 @@ export default function SourcesList({
           accounts={accounts}
           onEdit={onEdit}
           onDelete={onDelete}
-          selectedCurrency={selectedCurrency}
-          exchangeRates={exchangeRates}
+          displayCurrency={displayCurrency}
+          plnRates={plnRates}
         />
       ))}
     </div>

@@ -13,32 +13,34 @@ import {
   CartesianGrid,
 } from "recharts";
 import { BarChart2 } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
 
-// NOTE: These are placeholder components since the original imports for "./ui/Card" were not provided.
-// They mimic the structure and basic styling.
-const Card = ({ children, className = "" }) => (
-  <div
-    className={`border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-50 shadow-sm rounded-lg ${className}`}
-  >
-    {children}
-  </div>
-);
-const CardHeader = ({ children, className = "" }) => (
-  <div className={`p-6 ${className}`}>{children}</div>
-);
-const CardTitle = ({ children, className = "" }) => (
-  <h3
-    className={`text-lg font-semibold leading-none tracking-tight ${className}`}
-  >
-    {children}
-  </h3>
-);
-const CardContent = ({ children, className = "" }) => (
-  <div className={`p-6 pt-0 ${className}`}>{children}</div>
-);
+// The responsive legend is perfect and remains unchanged.
+const ResponsiveWrappingLegend = ({ payload }) => {
+  if (!payload || !payload.length) {
+    return null;
+  }
+  return (
+    <div className="flex flex-wrap justify-center w-full px-2 sm:px-4">
+      {payload.map((entry, index) => (
+        <div
+          key={`item-${index}`}
+          className="flex items-center mr-4 md:mr-6 mb-2"
+        >
+          <span
+            className="w-2 h-2 sm:w-3 sm:h-3 inline-block mr-2 rounded-sm shrink-0"
+            style={{ backgroundColor: entry.color }}
+          ></span>
+          <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+            {entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 export default function DashboardMetrics({ data, snapshots, displayCurrency }) {
-  // Ensure data and its properties have fallbacks to prevent runtime errors
   const {
     netWorth = 0,
     assetAllocation = [],
@@ -57,7 +59,9 @@ export default function DashboardMetrics({ data, snapshots, displayCurrency }) {
     "#45A1FF",
   ];
 
-  // Convert PLN values to the selected display currency
+  // Re-introducing the ref for the scrollable container.
+  const scrollContainerRef = useRef(null);
+
   const rate = plnRates[displayCurrency] || 1;
   const netWorthInDisplay = netWorth / rate;
   const liquidAssetsInDisplay = liquidAssets / rate;
@@ -84,9 +88,26 @@ export default function DashboardMetrics({ data, snapshots, displayCurrency }) {
     });
   }, [snapshots, displayCurrency, plnRates]);
 
+  const legendPayload = useMemo(
+    () =>
+      assetAllocation.map((entry, index) => ({
+        value: entry.name,
+        color: COLORS[index % COLORS.length],
+      })),
+    [assetAllocation]
+  );
+
+  // Re-introducing the useEffect to center the scrollable chart after it renders.
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const { scrollWidth, clientWidth } = scrollContainerRef.current;
+      const scrollLeft = (scrollWidth - clientWidth) / 2;
+      scrollContainerRef.current.scrollLeft = scrollLeft;
+    }
+  }, [assetAllocation]);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Total Net Worth Card */}
       <Card className="lg:col-span-1">
         <CardHeader>
           <CardTitle>Total Net Worth</CardTitle>
@@ -106,7 +127,7 @@ export default function DashboardMetrics({ data, snapshots, displayCurrency }) {
         </CardContent>
       </Card>
 
-      {/* Worth Over Time Card */}
+      {/* --- WORTH OVER TIME CARD (RESTORED) --- */}
       <Card className="lg:col-span-2">
         <CardHeader>
           <CardTitle>Worth Over Time</CardTitle>
@@ -172,52 +193,65 @@ export default function DashboardMetrics({ data, snapshots, displayCurrency }) {
         </CardContent>
       </Card>
 
+      {/* --- ASSET ALLOCATION CARD (FINAL VERSION) --- */}
       <Card className="lg:col-span-3">
         <CardHeader>
           <CardTitle>Asset Allocation</CardTitle>
         </CardHeader>
-        <CardContent className="h-96">
+        <CardContent className="flex flex-col p-4">
           {assetAllocation && assetAllocation.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={assetAllocation}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius="70%"
-                  fill="#8884d8"
-                  label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
-                >
-                  {assetAllocation.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => formatCurrency(value / rate)}
-                  contentStyle={{
-                    backgroundColor: "rgba(31, 41, 55, 0.8)",
-                    border: "none",
-                    borderRadius: "0.5rem",
+            <>
+              {/* This container has overflow-x-auto to enable horizontal scrolling. */}
+              <div ref={scrollContainerRef} className="w-full overflow-x-auto">
+                {/* This inner div sets the minimum width for the chart content. */}
+                <div
+                  style={{
+                    minWidth: "500px",
+                    height: "300px",
+                    margin: "0 auto",
                   }}
-                />
-                {/* The Legend is now rendered inside the container and positioned by recharts */}
-                <Legend
-                  verticalAlign="bottom"
-                  align="center"
-                  wrapperStyle={{ paddingTop: "20px" }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={assetAllocation}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius="70%"
+                        fill="#8884d8"
+                        labelLine={true}
+                        label={({ name, percent }) =>
+                          `${name} (${(percent * 100).toFixed(0)}%)`
+                        }
+                      >
+                        {assetAllocation.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => formatCurrency(value / rate)}
+                        contentStyle={{
+                          backgroundColor: "rgba(31, 41, 55, 0.8)",
+                          border: "none",
+                          borderRadius: "0.5rem",
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <hr className="w-full my-4 border-gray-200 dark:border-gray-700" />
+
+              <ResponsiveWrappingLegend payload={legendPayload} />
+            </>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+            <div className="flex flex-col items-center justify-center h-96 text-gray-500">
               <BarChart2 size={32} />
               <p className="mt-2 text-center text-sm">
                 No positive assets to display.
