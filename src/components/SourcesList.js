@@ -157,16 +157,18 @@ function SourceCard({
           )}
         </span>
       </div>
-      <div className="flex justify-between items-center text-gray-500 dark:text-gray-400 text-[10px] mt-1 px-2">
-        <span>
-          Base: {formatMoney(item.baseAmount, item.currency || "PLN")} | Int:{" "}
-          {formatMoney(item.accumulatedInterest, item.currency || "PLN")}
-        </span>
-        <span className="inline-flex items-center">
-          {item.interestRate}% | Upd:&nbsp;
-          {renderFormattedDate(item.lastUpdated)}
-        </span>
-      </div>
+      {item.interestRate > 0 && (
+        <div className="flex justify-between items-center text-gray-500 dark:text-gray-400 text-[10px] mt-1 px-2">
+          <span>
+            Base: {formatMoney(item.baseAmount, item.currency || "PLN")} | Int:{" "}
+            {formatMoney(item.accumulatedInterest, item.currency || "PLN")}
+          </span>
+          <span className="inline-flex items-center">
+            {item.interestRate}% | Upd:&nbsp;
+            {renderFormattedDate(item.lastUpdated)}
+          </span>
+        </div>
+      )}
     </>
   );
 
@@ -222,9 +224,6 @@ function SourceCard({
                   )}
                 </span>
               </div>
-              <div className="text-right text-gray-400 text-[10px] mt-1">
-                Updated:&nbsp;{renderFormattedDate(source.lastUpdated)}
-              </div>
             </div>
             {source.bankDebt > 0 && (
               <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
@@ -237,9 +236,6 @@ function SourceCard({
                       source.bankDebtCurrency || "PLN"
                     )}
                   </span>
-                </div>
-                <div className="text-right text-gray-400 text-[10px] mt-1">
-                  Updated:&nbsp;{renderFormattedDate(source.lastUpdated)}
                 </div>
               </div>
             )}
@@ -269,9 +265,6 @@ function SourceCard({
                     }).format(acc.balance)}{" "}
                     {acc.currency}
                   </span>
-                </div>
-                <div className="text-right text-gray-400 text-[10px] mt-1">
-                  Updated:&nbsp;{renderFormattedDate(acc.lastUpdated)}
                 </div>
               </div>
             ))}

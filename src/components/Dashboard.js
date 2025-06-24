@@ -35,9 +35,9 @@ export default function Dashboard({ user, auth }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSource, setEditingSource] = useState(null);
   const [isSnapshotPending, setIsSnapshotPending] = useState(false);
-  // --- NEW: State for managing the global display currency ---
   const [displayCurrency, setDisplayCurrency] = useState("PLN");
 
+  // Effect to initialize Firestore database instance
   useEffect(() => {
     if (auth.app) {
       const firestore = getFirestore(auth.app);
@@ -45,6 +45,7 @@ export default function Dashboard({ user, auth }) {
     }
   }, [auth.app]);
 
+  // Effect to subscribe to data changes from Firestore
   useEffect(() => {
     if (!db || !user) {
       setSources([]);
@@ -56,12 +57,14 @@ export default function Dashboard({ user, auth }) {
     const userId = user.uid;
     const baseCollectionsPath = `artifacts/${appId}/users/${userId}`;
 
+    // Subscribe to sources collection
     const unsubSources = onSnapshot(
       query(collection(db, `${baseCollectionsPath}/sources`)),
       (snapshot) => {
         setSources(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
       }
     );
+    // Subscribe to accounts collection
     const unsubAccounts = onSnapshot(
       query(collection(db, `${baseCollectionsPath}/accounts`)),
       (snapshot) => {
@@ -70,17 +73,19 @@ export default function Dashboard({ user, auth }) {
         );
       }
     );
+    // Subscribe to snapshots collection
     const unsubSnapshots = onSnapshot(
       query(collection(db, `${baseCollectionsPath}/netWorthSnapshots`)),
       (snapshot) => {
         const snapshotData = snapshot.docs
           .map((doc) => ({ ...doc.data(), id: doc.id }))
-          .filter((s) => s.timestamp)
+          .filter((s) => s.timestamp) // Ensure snapshot has a timestamp
           .sort((a, b) => a.timestamp.toMillis() - b.timestamp.toMillis());
         setSnapshots(snapshotData);
       }
     );
 
+    // Cleanup subscriptions on component unmount
     return () => {
       unsubSources();
       unsubAccounts();
@@ -88,6 +93,7 @@ export default function Dashboard({ user, auth }) {
     };
   }, [db, user]);
 
+  // Effect to fetch latest exchange rates from NBP API on mount
   useEffect(() => {
     const fetchRates = async () => {
       try {
@@ -114,8 +120,8 @@ export default function Dashboard({ user, auth }) {
     fetchRates();
   }, []);
 
+  // Memoized calculation of all financial data
   const processedData = useMemo(() => {
-    // --- NEW: Add PLN as a "base" rate for calculations ---
     const plnRates = { ...exchangeRates, PLN: 1 };
 
     const sourceValues = sources
@@ -143,44 +149,30 @@ export default function Dashboard({ user, auth }) {
 
           totalValuePLN = propertyValuePLN - bankDebtPLN - otherDebtsTotalPLN;
         } else {
-          const positiveAccounts = accounts.filter(
-            (acc) => acc.sourceId === source.id && acc.type === "account"
-          );
-          const loanAccounts = accounts.filter(
-            (acc) => acc.sourceId === source.id && acc.type === "loan"
-          );
-          const debtAccounts = accounts.filter(
-            (acc) => acc.sourceId === source.id && acc.type === "debt"
+          // Filter accounts related to the current source
+          const relatedAccounts = accounts.filter(
+            (acc) => acc.sourceId === source.id
           );
 
-          const positiveTotal = positiveAccounts.reduce((sum, acc) => {
-            const rate = plnRates[acc.currency] || 1;
-            return sum + (acc.balance || 0) * rate;
+          totalValuePLN = relatedAccounts.reduce((sum, acc) => {
+            const rate = plnRates[acc.currency || "PLN"] || 1;
+            if (acc.type === "account") { // Positive balance
+              return sum + (acc.balance || 0) * rate;
+            }
+            if (acc.type === "loan") { // Money loaned out (positive)
+              const loanValue = (acc.baseAmount || 0) + (acc.accumulatedInterest || 0);
+              return sum + loanValue * rate;
+            }
+            if (acc.type === "debt") { // Money owed (negative)
+              const debtValue = (acc.baseAmount || 0) + (acc.accumulatedInterest || 0);
+              return sum - debtValue * rate;
+            }
+            return sum;
           }, 0);
-
-          const loansTotal = loanAccounts.reduce((sum, loan) => {
-            const rate = plnRates[loan.currency || "PLN"] || 1;
-            const loanValue =
-              (loan.baseAmount || 0) + (loan.accumulatedInterest || 0);
-            return sum + loanValue * rate;
-          }, 0);
-
-          const debtTotal = debtAccounts.reduce((sum, debt) => {
-            const rate = plnRates[debt.currency || "PLN"] || 1;
-            const debtValue =
-              (debt.baseAmount || 0) + (debt.accumulatedInterest || 0);
-            return sum + debtValue * rate;
-          }, 0);
-
-          totalValuePLN = positiveTotal + loansTotal - debtTotal;
-
-          const allSubAccounts = [
-            ...positiveAccounts,
-            ...loanAccounts,
-            ...debtAccounts,
-          ];
-          if (allSubAccounts.length > 0) {
-            lastUpdated = allSubAccounts.reduce(
+          
+          // Determine the most recent update timestamp from all related accounts
+          if (relatedAccounts.length > 0) {
+            lastUpdated = relatedAccounts.reduce(
               (latest, acc) =>
                 !latest ||
                 (acc.lastUpdated &&
@@ -195,6 +187,7 @@ export default function Dashboard({ user, auth }) {
       })
       .sort((a, b) => b.totalValuePLN - a.totalValuePLN);
 
+    // Calculate aggregate metrics
     const netWorth = sourceValues.reduce(
       (sum, source) => sum + source.totalValuePLN,
       0
@@ -202,11 +195,12 @@ export default function Dashboard({ user, auth }) {
     const liquidAssets = sourceValues
       .filter((source) => source.type !== "property")
       .reduce((sum, source) => sum + source.totalValuePLN, 0);
-
+    
+    // Prepare data for asset allocation pie chart
     const assetAllocation = (() => {
       if (netWorth <= 0) return [];
       const positiveSources = sourceValues.filter((s) => s.totalValuePLN > 0);
-      const threshold = netWorth * 0.02;
+      const threshold = netWorth * 0.02; // Group small assets into "Other"
       const majorAssets = [];
       let otherAssetsValue = 0;
       positiveSources.forEach((source) => {
@@ -225,6 +219,7 @@ export default function Dashboard({ user, auth }) {
     return { sourceValues, netWorth, liquidAssets, assetAllocation, plnRates };
   }, [sources, accounts, exchangeRates]);
 
+  // Function to take a daily snapshot of net worth
   const takeSnapshot = useCallback(async () => {
     if (!db || !user || processedData.netWorth === null) return;
     const userId = user.uid;
@@ -233,18 +228,16 @@ export default function Dashboard({ user, auth }) {
       `artifacts/${appId}/users/${userId}/netWorthSnapshots`
     );
     const today = new Date();
-    const startOfDay = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate()
-    );
-    const q = query(
-      snapshotCollectionRef,
-      where("timestamp", ">=", startOfDay)
-    );
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    
+    // Query for any existing snapshots for today to overwrite
+    const q = query(snapshotCollectionRef, where("timestamp", ">=", startOfDay));
     const snapshotsToDelete = await getDocs(q);
+
     const batch = writeBatch(db);
-    snapshotsToDelete.forEach((doc) => batch.delete(doc.ref));
+    snapshotsToDelete.forEach((doc) => batch.delete(doc.ref)); // Delete old snapshots for today
+
+    // Add the new snapshot
     const newSnapshotRef = doc(snapshotCollectionRef);
     batch.set(newSnapshotRef, {
       netWorth: processedData.netWorth,
@@ -252,16 +245,19 @@ export default function Dashboard({ user, auth }) {
       timestamp: Timestamp.now(),
       assetAllocation: processedData.assetAllocation,
     });
+
     await batch.commit();
   }, [db, user, processedData]);
 
+  // Effect to trigger snapshot when pending
   useEffect(() => {
     if (isSnapshotPending && processedData.netWorth !== null) {
       takeSnapshot();
       setIsSnapshotPending(false);
     }
   }, [isSnapshotPending, processedData, takeSnapshot]);
-
+  
+  // Modal handlers
   const handleOpenModal = (source = null) => {
     setError(null);
     setEditingSource(source);
@@ -272,6 +268,7 @@ export default function Dashboard({ user, auth }) {
     setIsModalOpen(false);
   };
 
+  // --- CORE FIX IS HERE ---
   const handleSaveSource = async (sourceData) => {
     if (!db || !user) return;
     const userId = user.uid;
@@ -282,6 +279,7 @@ export default function Dashboard({ user, auth }) {
       const sourceRef = sourceData.id
         ? doc(db, `${baseDocPath}/sources`, sourceData.id)
         : doc(collection(db, `${baseDocPath}/sources`));
+
       const sourcePayload = {
         name: sourceData.name,
         type: sourceData.type,
@@ -289,39 +287,30 @@ export default function Dashboard({ user, auth }) {
       };
 
       if (sourceData.type === "property") {
-        sourcePayload.m2 = sourceData.m2;
-        sourcePayload.pricePerM2 = sourceData.pricePerM2;
-        sourcePayload.pricePerM2Currency = sourceData.pricePerM2Currency;
-        sourcePayload.bankDebt = sourceData.bankDebt;
-        sourcePayload.bankDebtCurrency = sourceData.bankDebtCurrency;
-        sourcePayload.otherDebts = (sourceData.otherDebts || []).map(
-          (debt) => ({
-            name: debt.name || "Unnamed Debt",
-            baseAmount: debt.baseAmount || 0,
-            accumulatedInterest: debt.accumulatedInterest || 0,
-            interestRate: debt.interestRate || 0,
-            currency: debt.currency || "PLN",
-            lastUpdated: debt.lastUpdated?.toDate
-              ? debt.lastUpdated
-              : Timestamp.now(),
-          })
-        );
+        Object.assign(sourcePayload, {
+          m2: sourceData.m2,
+          pricePerM2: sourceData.pricePerM2,
+          pricePerM2Currency: sourceData.pricePerM2Currency,
+          bankDebt: sourceData.bankDebt,
+          bankDebtCurrency: sourceData.bankDebtCurrency,
+          otherDebts: (sourceData.otherDebts || []).map(
+            (debt) => ({
+              ...debt,
+              lastUpdated: debt.lastUpdated?.toDate ? debt.lastUpdated : Timestamp.now(),
+            })
+          ),
+        });
       }
       batch.set(sourceRef, sourcePayload, { merge: true });
 
       if (sourceData.type !== "property") {
-        const allSubAccounts = [
-          ...(sourceData.accounts || []),
-          ...(sourceData.loans || []),
-          ...(sourceData.debts || []),
-        ];
-        const existingSubAccounts = accounts.filter(
-          (acc) => acc.sourceId === sourceRef.id
-        );
-        const submittedSubAccountIds = allSubAccounts
-          .map((a) => a.id)
-          .filter(Boolean);
+        // We now correctly use the single `accounts` array from the payload.
+        const allSubAccounts = sourceData.accounts || [];
 
+        // Logic to detect and delete accounts that were removed in the modal
+        const existingSubAccounts = accounts.filter(acc => acc.sourceId === (sourceData.id || sourceRef.id));
+        const submittedSubAccountIds = allSubAccounts.map(a => a.id).filter(Boolean);
+        
         existingSubAccounts.forEach((existing) => {
           if (!submittedSubAccountIds.includes(existing.id)) {
             const refToDelete = doc(db, `${baseDocPath}/accounts`, existing.id);
@@ -329,34 +318,26 @@ export default function Dashboard({ user, auth }) {
           }
         });
 
+        // Logic to add or update all submitted accounts
         allSubAccounts.forEach((subAcc) => {
-          const finalSourceId = sourceRef.id;
+          const finalSourceId = sourceData.id || sourceRef.id;
           const accountRef = subAcc.id
             ? doc(db, `${baseDocPath}/accounts`, subAcc.id)
             : doc(collection(db, `${baseDocPath}/accounts`));
-          let payload;
-          if (subAcc.type === "debt" || subAcc.type === "loan") {
-            payload = {
-              ...subAcc,
-              sourceId: finalSourceId,
-              lastUpdated: subAcc.lastUpdated?.toDate
-                ? subAcc.lastUpdated
-                : Timestamp.now(),
-            };
-          } else {
-            payload = {
-              ...subAcc,
-              sourceId: finalSourceId,
-              lastUpdated: Timestamp.now(),
-            };
-          }
+
+          // Ensure lastUpdated is a valid Firestore Timestamp
+          const payload = {
+            ...subAcc,
+            sourceId: finalSourceId,
+            lastUpdated: subAcc.lastUpdated?.toDate ? subAcc.lastUpdated : Timestamp.now(),
+          };
           batch.set(accountRef, payload, { merge: true });
         });
       }
 
       await batch.commit();
       handleCloseModal();
-      setIsSnapshotPending(true);
+      setIsSnapshotPending(true); // Trigger a new snapshot after saving
     } catch (e) {
       console.error("Error saving source:", e);
       const errorMessage =
@@ -369,13 +350,18 @@ export default function Dashboard({ user, auth }) {
 
   const handleDeleteSource = async (sourceId) => {
     if (!db || !user) return;
-    if (!window.confirm("Are you sure? This cannot be undone.")) return;
+    // Note: window.confirm is used for simplicity. For a better UX, a custom modal is recommended.
+    if (!window.confirm("Are you sure? This will delete the source and all its associated accounts. This cannot be undone.")) return;
+    
     const userId = user.uid;
     const baseDocPath = `artifacts/${appId}/users/${userId}`;
     const batch = writeBatch(db);
     try {
+      // Delete the source document
       const sourceRef = doc(db, `${baseDocPath}/sources`, sourceId);
       batch.delete(sourceRef);
+
+      // Find and delete all associated accounts
       const associatedAccounts = accounts.filter(
         (acc) => acc.sourceId === sourceId
       );
@@ -383,8 +369,9 @@ export default function Dashboard({ user, auth }) {
         const accountRef = doc(db, `${baseDocPath}/accounts`, acc.id);
         batch.delete(accountRef);
       });
+
       await batch.commit();
-      setIsSnapshotPending(true);
+      setIsSnapshotPending(true); // Update metrics after deletion
     } catch (e) {
       console.error("Error deleting source:", e);
       const errorMessage =
@@ -397,7 +384,6 @@ export default function Dashboard({ user, auth }) {
 
   return (
     <div className="bg-gray-50 dark:bg-gray-900 min-h-screen font-sans">
-      {/* --- NEW: Pass state and handler to Header --- */}
       <Header
         user={user}
         auth={auth}
@@ -407,15 +393,16 @@ export default function Dashboard({ user, auth }) {
       <main className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
         {error && (
           <div
-            className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded"
+            className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded relative"
             role="alert"
-            onClick={() => setError(null)}
           >
             <p className="font-bold">An Error Occurred</p>
             <p>{error}</p>
+             <span className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setError(null)}>
+                <svg className="fill-current h-6 w-6 text-red-500" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>Close</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+            </span>
           </div>
         )}
-        {/* --- NEW: Pass currency and rates down to components --- */}
         <DashboardMetrics
           data={processedData}
           snapshots={snapshots}

@@ -51,6 +51,7 @@ export default function SourceModal({
         setDebts(associatedAccounts.filter((acc) => acc.type === "debt"));
       }
     } else {
+      // Reset state for a new source
       setName("");
       setType("bank");
       setM2(0);
@@ -101,6 +102,7 @@ export default function SourceModal({
       ? item.lastUpdated.toDate()
       : new Date();
 
+    // Check if update has already been run today
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
@@ -108,10 +110,12 @@ export default function SourceModal({
     startOfLastUpdateDay.setHours(0, 0, 0, 0);
 
     if (startOfToday <= startOfLastUpdateDay) {
+      alert("Interest has already been updated today for this item.");
       return;
     }
 
     const yearlyRate = (item.interestRate || 0) / 100;
+    if (yearlyRate <= 0) return;
 
     let currentPrincipal =
       (item.baseAmount || 0) + (item.accumulatedInterest || 0);
@@ -149,7 +153,12 @@ export default function SourceModal({
   };
 
   const handleSaveClick = () => {
-    let payload = { id: source ? source.id : null, name, type };
+    let payload = {
+      id: source ? source.id : null,
+      name,
+      type,
+      lastUpdated: Timestamp.now(),
+    };
 
     if (type === "property") {
       payload = {
@@ -162,7 +171,9 @@ export default function SourceModal({
         otherDebts,
       };
     } else {
-      payload = { ...payload, accounts: positiveAccounts, loans, debts };
+      // CORRECTED: Combine all accounts into one array for saving.
+      const allAccounts = [...positiveAccounts, ...loans, ...debts];
+      payload = { ...payload, accounts: allAccounts };
     }
     onSave(payload);
   };
@@ -189,73 +200,81 @@ export default function SourceModal({
         {(list || []).map((item, index) => (
           <div
             key={item.id || index}
-            className="border-b dark:border-gray-600 pb-3"
+            className="border-b dark:border-gray-600 pb-3 last:border-b-0"
           >
             {isTwoRow ? (
               <>
                 <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end">
-                  {fieldsConfig.row1.map((field) => (
-                    <div key={field.name} className={field.className}>
-                      <label className="text-xs">{field.label}</label>
-                      <Input
-                        type={field.type}
-                        value={item[field.name] || ""}
-                        onChange={(e) =>
-                          handleListChange(
-                            list,
-                            setList,
-                            index,
-                            field.name,
-                            e.target.value
-                          )
-                        }
-                        placeholder={field.placeholder}
-                      />
-                    </div>
-                  ))}
+                  {fieldsConfig.row1.map(
+                    (field) =>
+                      field.type !== "hidden" && (
+                        <div key={field.name} className={field.className}>
+                          <label className="text-xs">{field.label}</label>
+                          <Input
+                            type={field.type}
+                            value={item[field.name] || ""}
+                            onChange={(e) =>
+                              handleListChange(
+                                list,
+                                setList,
+                                index,
+                                field.name,
+                                e.target.value
+                              )
+                            }
+                            placeholder={field.placeholder}
+                          />
+                        </div>
+                      )
+                  )}
                 </div>
                 <div className="grid grid-cols-12 gap-x-2 gap-y-2 items-end mt-2">
-                  {fieldsConfig.row2.map((field) => (
-                    <div key={field.name} className={field.className}>
-                      <label className="text-xs">{field.label}</label>
-                      {field.type === "select" ? (
-                        <Select
-                          value={item[field.name] || field.defaultValue}
-                          onChange={(e) =>
-                            handleListChange(
-                              list,
-                              setList,
-                              index,
-                              field.name,
-                              e.target.value
-                            )
-                          }
-                        >
-                          {field.options.map((opt) => (
-                            <option key={opt}>{opt}</option>
-                          ))}
-                        </Select>
-                      ) : (
-                        <Input
-                          type={field.type}
-                          value={item[field.name] || ""}
-                          onChange={(e) =>
-                            handleListChange(
-                              list,
-                              setList,
-                              index,
-                              field.name,
-                              e.target.value
-                            )
-                          }
-                          placeholder={field.placeholder}
-                          step={
-                            field.name === "interestRate" ? "0.01" : undefined
-                          }
-                        />
-                      )}
-                    </div>
-                  ))}
+                  {fieldsConfig.row2.map(
+                    (field) =>
+                      field.type !== "hidden" && (
+                        <div key={field.name} className={field.className}>
+                          <label className="text-xs">{field.label}</label>
+                          {field.type === "select" ? (
+                            <Select
+                              value={item[field.name] || field.defaultValue}
+                              onChange={(e) =>
+                                handleListChange(
+                                  list,
+                                  setList,
+                                  index,
+                                  field.name,
+                                  e.target.value
+                                )
+                              }
+                            >
+                              {field.options.map((opt) => (
+                                <option key={opt}>{opt}</option>
+                              ))}
+                            </Select>
+                          ) : (
+                            <Input
+                              type={field.type}
+                              value={item[field.name] || ""}
+                              onChange={(e) =>
+                                handleListChange(
+                                  list,
+                                  setList,
+                                  index,
+                                  field.name,
+                                  e.target.value
+                                )
+                              }
+                              placeholder={field.placeholder}
+                              step={
+                                field.name === "interestRate"
+                                  ? "0.01"
+                                  : undefined
+                              }
+                            />
+                          )}
+                        </div>
+                      )
+                  )}
                   <div className="col-span-12 sm:col-span-3 flex justify-end gap-1 self-end">
                     {isInterestBearing && (
                       <Button
@@ -265,6 +284,7 @@ export default function SourceModal({
                         variant="default"
                         size="sm"
                         className="w-8 h-8 p-0"
+                        title="Calculate & Add Compounded Interest"
                       >
                         <TrendingUp size={14} />
                       </Button>
@@ -324,16 +344,6 @@ export default function SourceModal({
                     )
                 )}
                 <div className="col-span-12 sm:col-span-1 flex justify-end">
-                  {isInterestBearing && (
-                    <Button
-                      onClick={() => handleUpdateInterest(list, setList, index)}
-                      variant="default"
-                      size="sm"
-                      className="w-8 h-8 p-0"
-                    >
-                      <TrendingUp size={14} />
-                    </Button>
-                  )}
                   <Button
                     onClick={() => removeListItem(list, setList, index)}
                     variant="destructive"
@@ -353,7 +363,7 @@ export default function SourceModal({
               setList,
               allFields.reduce(
                 (acc, f) => ({ ...acc, [f.name]: f.defaultValue }),
-                {}
+                { lastUpdated: Timestamp.now() }
               )
             )
           }
@@ -466,7 +476,7 @@ export default function SourceModal({
               </div>
 
               {renderDynamicList(
-                "Other Debts",
+                "Other Debts (e.g. from family)",
                 otherDebts,
                 setOtherDebts,
                 {
@@ -568,6 +578,8 @@ export default function SourceModal({
                     },
                   ],
                   row2: [
+                    // CORRECTED: Added hidden type field
+                    { name: "type", type: "hidden", defaultValue: "loan" },
                     {
                       name: "accumulatedInterest",
                       label: "Acc. Interest",
@@ -595,7 +607,7 @@ export default function SourceModal({
                 true
               )}
               {renderDynamicList(
-                "Associated Debts",
+                "Associated Debts (Money you owe)",
                 debts,
                 setDebts,
                 {
@@ -616,6 +628,8 @@ export default function SourceModal({
                     },
                   ],
                   row2: [
+                    // CORRECTED: Added hidden type field
+                    { name: "type", type: "hidden", defaultValue: "debt" },
                     {
                       name: "accumulatedInterest",
                       label: "Acc. Interest",
