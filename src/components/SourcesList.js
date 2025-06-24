@@ -84,7 +84,9 @@ function SourceCard({
     new Intl.NumberFormat("pl-PL", {
       style: "currency",
       currency: currency,
-    }).format(value || 0);
+      currencyDisplay: "code",
+    }).format(value || 0)
+    .replace(/\s/g, ' ');
 
   const sourceAccounts = useMemo(
     () => accounts.filter((acc) => acc.sourceId === source.id),
@@ -112,9 +114,9 @@ function SourceCard({
     () =>
       [...loanAccounts].sort(
         (a, b) =>
-          b.baseAmount +
-          b.accumulatedInterest -
-          (a.baseAmount + a.accumulatedInterest)
+          (b.baseAmount || 0) +
+          (b.accumulatedInterest || 0) -
+          ((a.baseAmount || 0) + (a.accumulatedInterest || 0))
       ),
     [loanAccounts]
   );
@@ -122,9 +124,9 @@ function SourceCard({
     () =>
       [...debtAccounts].sort(
         (a, b) =>
-          b.baseAmount +
-          b.accumulatedInterest -
-          (a.baseAmount + a.accumulatedInterest)
+          (b.baseAmount || 0) +
+          (b.accumulatedInterest || 0) -
+          ((a.baseAmount || 0) + (a.accumulatedInterest || 0))
       ),
     [debtAccounts]
   );
@@ -132,9 +134,9 @@ function SourceCard({
     () =>
       [...(source.otherDebts || [])].sort(
         (a, b) =>
-          b.baseAmount +
-          b.accumulatedInterest -
-          (a.baseAmount + a.accumulatedInterest)
+          (b.baseAmount || 0) +
+          (b.accumulatedInterest || 0) -
+          ((a.baseAmount || 0) + (a.accumulatedInterest || 0))
       ),
     [source.otherDebts]
   );
@@ -260,10 +262,7 @@ function SourceCard({
                     {acc.name || `Account`}
                   </span>
                   <span className="font-semibold text-green-700 dark:text-green-400">
-                    {new Intl.NumberFormat("en-US", {
-                      style: "decimal",
-                    }).format(acc.balance)}{" "}
-                    {acc.currency}
+                    {formatMoney(acc.balance, acc.currency)}
                   </span>
                 </div>
               </div>
