@@ -91,24 +91,67 @@ export default function SourceModal({
   const removeListItem = (list, setList, index) => {
     setList(list.filter((_, i) => i !== index));
   };
-
+    
   const handleUpdateInterest = (list, setList, index) => {
     const updatedList = [...list];
     const item = { ...updatedList[index] };
-    const lastUpdateDate = item.lastUpdated?.toDate
+
+    const now = new Date();
+    const lastUpdate = item.lastUpdated?.toDate
       ? item.lastUpdated.toDate()
       : new Date();
-    const now = new Date();
 
-    const daysDiff = Math.floor(
-      (now.getTime() - lastUpdateDate.getTime()) / (1000 * 3600 * 24)
-    );
-    if (daysDiff <= 0) return;
+    // 1. Set up initial dates and principal
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const startOfLastUpdateDay = new Date(lastUpdate);
+    startOfLastUpdateDay.setHours(0, 0, 0, 0);
+
+    if (startOfToday <= startOfLastUpdateDay) {
+      return; // No interest to calculate
+    }
 
     const yearlyRate = (item.interestRate || 0) / 100;
-    const interest = (item.baseAmount || 0) * yearlyRate * (daysDiff / 365);
 
-    item.accumulatedInterest = (item.accumulatedInterest || 0) + interest;
+    // Start with the principal as of the last update
+    let currentPrincipal =
+      (item.baseAmount || 0) + (item.accumulatedInterest || 0);
+
+    // 2. Iterate year by year to calculate interest accurately
+    let currentDate = new Date(startOfLastUpdateDay);
+    const isLeapYear = (year) =>
+      (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+
+    while (currentDate < startOfToday) {
+      const currentYear = currentDate.getFullYear();
+      const daysInCurrentYear = isLeapYear(currentYear) ? 366 : 365;
+
+      // Determine the end of the calculation period for this loop:
+      // It's either the end of the current year or the final date (today), whichever comes first.
+      const endOfYear = new Date(currentYear + 1, 0, 1); // Jan 1st of next year
+      const endOfPeriod = startOfToday < endOfYear ? startOfToday : endOfYear;
+
+      // Calculate how many days are in this chunk
+      const daysInChunk =
+        (endOfPeriod.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24);
+
+      if (daysInChunk > 0) {
+        // Calculate interest for this specific chunk (part of a year)
+        const interestForChunk =
+          currentPrincipal *
+          (Math.pow(1 + yearlyRate, daysInChunk / daysInCurrentYear) - 1);
+        // Compound the interest by adding it to the principal for the next iteration
+        currentPrincipal += interestForChunk;
+      }
+
+      // Move the currentDate to the end of the chunk we just calculated
+      currentDate = endOfPeriod;
+    }
+
+    const finalAccumulatedInterest = currentPrincipal - (item.baseAmount || 0);
+
+    item.accumulatedInterest = finalAccumulatedInterest;
     item.lastUpdated = Timestamp.now();
     updatedList[index] = item;
     setList(updatedList);
