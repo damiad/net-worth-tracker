@@ -91,7 +91,7 @@ export default function SourceModal({
   const removeListItem = (list, setList, index) => {
     setList(list.filter((_, i) => i !== index));
   };
-    
+
   const handleUpdateInterest = (list, setList, index) => {
     const updatedList = [...list];
     const item = { ...updatedList[index] };
@@ -101,7 +101,6 @@ export default function SourceModal({
       ? item.lastUpdated.toDate()
       : new Date();
 
-    // 1. Set up initial dates and principal
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
 
@@ -109,16 +108,14 @@ export default function SourceModal({
     startOfLastUpdateDay.setHours(0, 0, 0, 0);
 
     if (startOfToday <= startOfLastUpdateDay) {
-      return; // No interest to calculate
+      return;
     }
 
     const yearlyRate = (item.interestRate || 0) / 100;
 
-    // Start with the principal as of the last update
     let currentPrincipal =
       (item.baseAmount || 0) + (item.accumulatedInterest || 0);
 
-    // 2. Iterate year by year to calculate interest accurately
     let currentDate = new Date(startOfLastUpdateDay);
     const isLeapYear = (year) =>
       (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
@@ -127,25 +124,19 @@ export default function SourceModal({
       const currentYear = currentDate.getFullYear();
       const daysInCurrentYear = isLeapYear(currentYear) ? 366 : 365;
 
-      // Determine the end of the calculation period for this loop:
-      // It's either the end of the current year or the final date (today), whichever comes first.
-      const endOfYear = new Date(currentYear + 1, 0, 1); // Jan 1st of next year
+      const endOfYear = new Date(currentYear + 1, 0, 1);
       const endOfPeriod = startOfToday < endOfYear ? startOfToday : endOfYear;
 
-      // Calculate how many days are in this chunk
       const daysInChunk =
         (endOfPeriod.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24);
 
       if (daysInChunk > 0) {
-        // Calculate interest for this specific chunk (part of a year)
         const interestForChunk =
           currentPrincipal *
           (Math.pow(1 + yearlyRate, daysInChunk / daysInCurrentYear) - 1);
-        // Compound the interest by adding it to the principal for the next iteration
         currentPrincipal += interestForChunk;
       }
 
-      // Move the currentDate to the end of the chunk we just calculated
       currentDate = endOfPeriod;
     }
 
@@ -258,6 +249,9 @@ export default function SourceModal({
                             )
                           }
                           placeholder={field.placeholder}
+                          step={
+                            field.name === "interestRate" ? "0.01" : undefined
+                          }
                         />
                       )}
                     </div>
