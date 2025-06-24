@@ -24,6 +24,40 @@ function SourceCard({
   displayCurrency,
   plnRates,
 }) {
+  const renderFormattedDate = (timestamp) => {
+    if (!timestamp || typeof timestamp.toDate !== "function") {
+      return "N/A";
+    }
+
+    const date = timestamp.toDate();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const isOutdated = date < thirtyDaysAgo;
+
+    const formattedDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(date);
+
+    if (isOutdated) {
+      return (
+        <span className="inline-flex items-center">
+          {formattedDate}
+          <span
+            className="ml-2 text-red-500 font-bold cursor-help"
+            title="Older than 30 days. Consider updating."
+          >
+            !
+          </span>
+        </span>
+      );
+    }
+
+    return formattedDate;
+  };
+
   // Formatter for displaying the main card total in the user-selected currency.
   const formatInSelectedCurrency = (valuePLN) => {
     if (
@@ -128,11 +162,9 @@ function SourceCard({
           Base: {formatMoney(item.baseAmount, item.currency || "PLN")} | Int:{" "}
           {formatMoney(item.accumulatedInterest, item.currency || "PLN")}
         </span>
-        <span>
-          {item.interestRate}% | Upd:{" "}
-          {item.lastUpdated && item.lastUpdated.toDate
-            ? item.lastUpdated.toDate().toLocaleDateString()
-            : "N/A"}
+        <span className="inline-flex items-center">
+          {item.interestRate}% | Upd:&nbsp;
+          {renderFormattedDate(item.lastUpdated)}
         </span>
       </div>
     </>
@@ -150,12 +182,8 @@ function SourceCard({
             )}
             {source.name}
           </CardTitle>
-          <p className="text-xs text-gray-400 mt-1">
-            Last updated:{" "}
-            {source.lastUpdated &&
-            typeof source.lastUpdated.toDate === "function"
-              ? source.lastUpdated.toDate().toLocaleDateString()
-              : "N/A"}
+          <p className="text-xs text-gray-400 mt-1 inline-flex items-center">
+            Last updated:&nbsp;{renderFormattedDate(source.lastUpdated)}
           </p>
         </div>
         <div className="flex gap-2">
@@ -194,6 +222,9 @@ function SourceCard({
                   )}
                 </span>
               </div>
+              <div className="text-right text-gray-400 text-[10px] mt-1">
+                Updated:&nbsp;{renderFormattedDate(source.lastUpdated)}
+              </div>
             </div>
             {source.bankDebt > 0 && (
               <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-md">
@@ -206,6 +237,9 @@ function SourceCard({
                       source.bankDebtCurrency || "PLN"
                     )}
                   </span>
+                </div>
+                <div className="text-right text-gray-400 text-[10px] mt-1">
+                  Updated:&nbsp;{renderFormattedDate(source.lastUpdated)}
                 </div>
               </div>
             )}
@@ -237,10 +271,7 @@ function SourceCard({
                   </span>
                 </div>
                 <div className="text-right text-gray-400 text-[10px] mt-1">
-                  Updated:{" "}
-                  {acc.lastUpdated && acc.lastUpdated.toDate
-                    ? acc.lastUpdated.toDate().toLocaleDateString()
-                    : "N/A"}
+                  Updated:&nbsp;{renderFormattedDate(acc.lastUpdated)}
                 </div>
               </div>
             ))}
@@ -267,7 +298,6 @@ function SourceCard({
   );
 }
 
-// --- FIX: Changed prop names to match what is being passed from Dashboard.js ---
 export default function SourcesList({
   sources,
   onEdit,
