@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button } from "./ui/Button";
 import { Select } from "./ui/Select";
-import { LogOut, DollarSign } from "lucide-react";
+import { LogOut, DollarSign, Globe } from "lucide-react";
 import { signOut } from "firebase/auth";
 
 export default function Header({
@@ -10,9 +10,28 @@ export default function Header({
   displayCurrency,
   setDisplayCurrency,
 }) {
+  const [selectedLang, setSelectedLang] = useState("en");
+
   const handleLogout = async () => {
     if (!auth) return;
     await signOut(auth);
+  };
+
+  const handleLanguageChange = (e) => {
+    const langCode = e.target.value;
+    setSelectedLang(langCode);
+
+    // If English (the default) is selected, call the revert function.
+    if (langCode === "en") {
+      if (window.revertGoogleTranslate) {
+        window.revertGoogleTranslate();
+      }
+    } else {
+      // For any other language, call the normal translate function.
+      if (window.changeGoogleTranslateLanguage) {
+        window.changeGoogleTranslateLanguage(langCode);
+      }
+    }
   };
 
   return (
@@ -26,6 +45,7 @@ export default function Header({
             </span>
           </div>
           <div className="flex items-center gap-4">
+            {/* Currency Selector */}
             <div className="w-28">
               <Select
                 value={displayCurrency}
@@ -38,6 +58,22 @@ export default function Header({
                 <option>GBP</option>
               </Select>
             </div>
+
+            {/* Custom Language Selector */}
+            <div className="flex items-center gap-1">
+              <Globe size={16} className="text-gray-500 dark:text-gray-400" />
+              <Select
+                value={selectedLang}
+                onChange={handleLanguageChange}
+                className="text-xs w-28"
+              >
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="pl">Polish</option>
+                <option value="de">German</option>
+              </Select>
+            </div>
+
             <span className="text-sm text-gray-500 dark:text-gray-400 hidden sm:block">
               {user.email || "Welcome!"}
             </span>

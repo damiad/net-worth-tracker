@@ -1,3 +1,47 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+
+/* This rule targets the container for the original Google widget. 
+  Making it not just hidden, but 0x0 pixels and positioned off-screen 
+  is the most robust way to ensure it never affects your layout.
+*/
+#google_translate_element {
+  display: none !important;
+  position: absolute !important;
+  top: -9999px !important;
+  left: -9999px !important;
+  height: 0 !important;
+  width: 0 !important;
+  z-index: -1 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/*
+  UPDATED, MORE RELIABLE RULE:
+  This now targets any iframe with the 'skiptranslate' class, 
+  which is consistently applied to all Google Translate UI elements.
+*/
+iframe.skiptranslate {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/*
+  This prevents the body from being pushed down by the banner before
+  our CSS has a chance to hide it.
+*/
+body {
+  top: 0px !important;
+}
+
+/*
+  This rule targets the specific state when the page is translated to 
+  override Google's inline style that adds the top margin.
+*/
+html.translated-ltr body,
+html.translated-rtl body {
+    top: 0px !important;
+}
