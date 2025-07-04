@@ -3,7 +3,6 @@ import {
   getFirestore,
   collection,
   doc,
-  addDoc,
   onSnapshot,
   query,
   getDocs,
@@ -14,7 +13,7 @@ import {
 
 import DashboardMetrics from "./DashboardMetrics";
 import SourcesList from "./SourcesList";
-import SourceModal from "./SourceModal";
+import SourceModal from "./modals/SourceModal";
 import { Button } from "./ui/Button";
 import { PlusCircle } from "lucide-react";
 import Header from "./Header";
